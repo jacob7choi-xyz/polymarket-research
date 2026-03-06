@@ -390,7 +390,7 @@ wheels = [
 ]
 
 [[package]]
-name = "polymarket-arbitrage-detector"
+name = "polymarket-research"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

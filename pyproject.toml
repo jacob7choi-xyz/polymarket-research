@@ -1,7 +1,7 @@
 [project]
-name = "polymarket-arbitrage-detector"
+name = "polymarket-research"
 version = "0.1.0"
-description = "Production-grade Polymarket arbitrage detection system for paper trading"
+description = "Prediction market probability research system. Calibration modeling and market intelligence for Polymarket."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
