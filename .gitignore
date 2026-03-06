@@ -65,3 +65,4 @@ Thumbs.db
 
 # Project specific
 config/config.local.yaml
+research/data/
