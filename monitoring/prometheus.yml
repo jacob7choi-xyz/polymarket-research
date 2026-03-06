@@ -1,0 +1,23 @@
+# Prometheus configuration
+# Scrapes metrics from arbitrage detector
+
+global:
+  scrape_interval: 15s  # How often to scrape targets
+  evaluation_interval: 15s  # How often to evaluate rules
+  external_labels:
+    monitor: 'arbitrage-detector'
+
+# Scrape configurations
+scrape_configs:
+  # Scrape the arbitrage detector
+  - job_name: 'arbitrage-detector'
+    static_configs:
+      - targets: ['arbitrage-detector:9090']
+        labels:
+          app: 'polymarket-arbitrage'
+          environment: 'development'
+
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

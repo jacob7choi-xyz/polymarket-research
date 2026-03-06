@@ -1,0 +1,88 @@
+# Docker Compose for local development and testing
+# Includes: App, Prometheus, Grafana
+#
+# Interview Point - Why Docker Compose?
+# - Local development environment
+# - Service discovery (containers can find each other)
+# - Easy to spin up entire stack
+# - Production-like environment on laptop
+
+version: '3.8'
+
+services:
+  # Main application
+  arbitrage-detector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: arbitrage-detector
+    restart: unless-stopped
+    environment:
+      # Override config with environment variables
+      - ARBITRAGE_LOG_LEVEL=INFO
+      - ARBITRAGE_JSON_LOGS=true
+      - ARBITRAGE_POLL_INTERVAL_SECONDS=60
+      - ARBITRAGE_PAPER_TRADING_ENABLED=true
+      - ARBITRAGE_INITIAL_CAPITAL_USD=10000
+    volumes:
+      # Mount logs directory for persistence
+      - ./logs:/app/logs
+      # Mount config for easy editing
+      - ./config:/app/config:ro
+    ports:
+      - "9090:9090"  # Prometheus metrics
+    networks:
+      - arbitrage-net
+    labels:
+      - "com.example.description=Polymarket arbitrage detector"
+      - "com.example.department=trading"
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9091:9090"  # Prometheus UI
+    networks:
+      - arbitrage-net
+    depends_on:
+      - arbitrage-detector
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "3000:3000"  # Grafana UI
+    networks:
+      - arbitrage-net
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  arbitrage-net:
+    driver: bridge

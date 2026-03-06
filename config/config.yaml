@@ -1,0 +1,41 @@
+# Default configuration for Polymarket Arbitrage Detector
+# This file provides base configuration - override with environment variables
+
+api:
+  polymarket_api_url: "https://gamma-api.polymarket.com"
+  timeout_seconds: 30.0
+  max_connections: 100
+
+rate_limiting:
+  requests_per_second: 10.0
+  burst: 20
+
+resilience:
+  retry_max_attempts: 3
+  retry_base_delay_seconds: 1.0
+  circuit_breaker_failure_threshold: 5
+  circuit_breaker_recovery_timeout_seconds: 60.0
+
+strategy:
+  arbitrage_threshold: 0.99
+  min_liquidity_usd: 1000
+  min_volume_usd: 10000
+
+execution:
+  paper_trading_enabled: true
+  initial_capital_usd: 10000
+  max_position_size_usd: 100
+
+markets:
+  categories:
+    - politics
+    - crypto
+  exclude_markets: []
+
+monitoring:
+  log_level: INFO
+  json_logs: true
+  metrics_port: 9090
+
+polling:
+  interval_seconds: 60.0

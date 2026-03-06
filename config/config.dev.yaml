@@ -1,0 +1,12 @@
+# Development configuration overrides
+# Use with: python -m src.main --config config/config.dev.yaml
+
+monitoring:
+  log_level: DEBUG
+  json_logs: false  # Human-readable logs for development
+
+polling:
+  interval_seconds: 30.0  # Poll more frequently in dev
+
+rate_limiting:
+  requests_per_second: 5.0  # Be gentler with API in dev
