@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS markets (
     resolved_yes INTEGER,  -- 1=True, 0=False, NULL=ambiguous/voided
     clob_token_ids TEXT,   -- raw JSON string of CLOB token IDs
     final_yes_price REAL,
+    price_24h_before REAL,
+    price_6h_before REAL,
+    price_1h_before REAL,
     price_history_fetched INTEGER NOT NULL DEFAULT 0,
     fetched_at TEXT NOT NULL
 );
@@ -31,11 +34,23 @@ CREATE TABLE IF NOT EXISTS price_history (
 """
 
 
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """Add columns that may not exist in older databases."""
+    cursor = conn.execute("PRAGMA table_info(markets)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if "category" not in existing:
+        conn.execute("ALTER TABLE markets ADD COLUMN category TEXT")
+    for col in ("price_24h_before", "price_6h_before", "price_1h_before"):
+        if col not in existing:
+            conn.execute(f"ALTER TABLE markets ADD COLUMN {col} REAL")
+
+
 def get_connection() -> sqlite3.Connection:
     """Open (or create) the SQLite database and ensure schema exists."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(_SCHEMA)
+    _ensure_columns(conn)
     return conn
 
 

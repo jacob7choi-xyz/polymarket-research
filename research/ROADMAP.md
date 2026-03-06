@@ -34,6 +34,26 @@ The pipeline fetches resolved markets, extracts final YES/NO prices from outcome
 
 ---
 
+## What We Learned (First Analysis)
+
+Ran `research/analysis/calibration.py` on 9,902 resolved markets. Key findings:
+
+1. **Dataset is dominated by near-certain markets (~95%).** The 0-10% bin has 7,063 markets and the 90-100% bin has 2,367. These are markets where the outcome was already obvious by the time they had a final price — not useful for studying calibration.
+
+2. **Ghost markets initialized at ~0.50 with no real trading.** Many markets in the 40-60% range show 0% or 100% resolution rates with tiny sample sizes (e.g. 43 markets in the 50-60% bin). These appear to be low-liquidity markets that never attracted real trading activity, so their "final price" is just the initialization value, not a crowd estimate.
+
+3. **Only ~50 genuinely uncertain, high-volume markets in the entire 10k sample.** The middle of the probability spectrum (20-80%) contains fewer than 300 markets total, and most of those are ghost markets. After filtering for meaningful volume, we'd be left with a handful — far too few for a calibration curve.
+
+**Bottom line:** The first 10k resolved markets from the Gamma API are almost entirely slam-dunk outcomes. The calibration curve is a step function (0% → 100%) rather than a smooth diagonal, because the dataset lacks genuinely uncertain markets.
+
+### Next step
+
+Either:
+- **Scale up to 100k+ markets** via the Gamma API to find enough uncertain markets in the long tail, or
+- **Switch to Dune Analytics** which has on-chain Polymarket data and can filter for high-volume, genuinely contested markets directly — likely the faster path to research-grade data.
+
+---
+
 ## 3. Building the Calibration Curve (Core Research Goal)
 
 ### What it is

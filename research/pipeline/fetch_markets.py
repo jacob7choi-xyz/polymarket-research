@@ -91,15 +91,17 @@ def _extract_market(market: dict) -> dict:
     }
 
 
-def _fetch_page(client: httpx.Client, offset: int) -> list[dict]:
+def _fetch_page(client: httpx.Client, offset: int, min_volume: int = 0) -> list[dict]:
     """Fetch a single page from the Gamma API with retry and backoff."""
-    params = {
+    params: dict[str, str | int] = {
         "closed": "true",
         "limit": PAGE_SIZE,
         "offset": offset,
         "order": "closedTime",
         "ascending": "false",
     }
+    if min_volume > 0:
+        params["volume_num_min"] = min_volume
 
     for attempt in range(MAX_RETRIES):
         try:
@@ -133,20 +135,28 @@ def _fetch_page(client: httpx.Client, offset: int) -> list[dict]:
     raise RuntimeError(f"Failed to fetch page at offset {offset} after {MAX_RETRIES} retries")
 
 
-def fetch_all_markets(max_markets: int | None = None) -> None:
+def fetch_all_markets(max_markets: int | None = None, min_volume: int = 0) -> None:
     """Fetch resolved binary markets and store them in SQLite."""
     checkpoint = load_checkpoint()
-    offset = checkpoint.get("market_fetch_offset", 0)
-    total_stored = checkpoint.get("market_fetch_total", 0)
+    suffix = f"_v{min_volume}" if min_volume > 0 else ""
+    offset_key = f"market_fetch_offset{suffix}"
+    total_key = f"market_fetch_total{suffix}"
+    offset = checkpoint.get(offset_key, 0)
+    total_stored = checkpoint.get(total_key, 0)
 
-    logger.info("starting_market_fetch", resume_offset=offset, previously_stored=total_stored)
+    logger.info(
+        "starting_market_fetch",
+        resume_offset=offset,
+        previously_stored=total_stored,
+        min_volume=min_volume,
+    )
 
     conn = get_connection()
     client = httpx.Client(timeout=30.0)
 
     try:
         while True:
-            page = _fetch_page(client, offset)
+            page = _fetch_page(client, offset, min_volume=min_volume)
 
             if not page:
                 logger.info("fetch_complete", total_markets=total_stored)
@@ -170,7 +180,7 @@ def fetch_all_markets(max_markets: int | None = None) -> None:
 
             conn.commit()
             offset += PAGE_SIZE
-            save_checkpoint({"market_fetch_offset": offset, "market_fetch_total": total_stored})
+            save_checkpoint({offset_key: offset, total_key: total_stored})
 
             time.sleep(RATE_LIMIT_DELAY)
     finally:
@@ -185,5 +195,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-markets", type=int, default=None, help="Stop after storing this many markets"
     )
+    parser.add_argument(
+        "--min-volume", type=int, default=10000, help="Minimum volume (USD) filter (default: 10000)"
+    )
     args = parser.parse_args()
-    fetch_all_markets(max_markets=args.max_markets)
+    fetch_all_markets(max_markets=args.max_markets, min_volume=args.min_volume)

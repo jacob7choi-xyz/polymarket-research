@@ -88,9 +88,14 @@ def _fetch_price_history(client: httpx.Client, token_id: str) -> list[dict[str, 
                 return data
             return []
 
-        except httpx.TimeoutException:
+        except (httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
             wait = RATE_LIMIT_DELAY * (2**attempt)
-            logger.warning("timeout", retry_in=wait, attempt=attempt + 1)
+            logger.warning(
+                "transient_error",
+                error=str(exc),
+                retry_in=wait,
+                attempt=attempt + 1,
+            )
             time.sleep(wait)
             continue
 
