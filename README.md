@@ -631,9 +631,9 @@ Built for learning and portfolio purposes—not actual trading.
 ## 📞 Contact
 
 **Author**: Jacob J. Choi
-**LinkedIn**: 
-**GitHub**: 
-**Portfolio**: 
+**LinkedIn**: https://www.linkedin.com/in/jacobjchoi/
+**GitHub**: https://github.com/jacob7choi-xyz
+**Portfolio**: https://jacobjchoi.xyz/
 
 **Purpose**: For general curiosity and to learn.
 
