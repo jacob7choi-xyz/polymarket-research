@@ -2,7 +2,7 @@
 
 > **Production-grade arbitrage detection system for Polymarket prediction markets**
 >
-> Built as a technical portfolio project demonstrating L10/Staff+ engineering skills for AI/ML roles at companies like Anthropic and OpenAI.
+> 
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -630,12 +630,12 @@ Built for learning and portfolio purposes—not actual trading.
 
 ## 📞 Contact
 
-**Author**: Your Name
-**LinkedIn**: [your-linkedin]
-**GitHub**: [your-github]
-**Portfolio**: [your-portfolio-site]
+**Author**: Jacob J. Choi
+**LinkedIn**: 
+**GitHub**: 
+**Portfolio**: 
 
-**Purpose**: Portfolio project for L10/Staff+ engineering roles at AI/ML companies (Anthropic, OpenAI, etc.)
+**Purpose**: For general curiosity and to learn.
 
 ---
 
