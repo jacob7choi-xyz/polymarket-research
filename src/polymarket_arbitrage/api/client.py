@@ -13,6 +13,7 @@ Interview Points:
 - Context manager: Ensures proper cleanup of connections
 """
 
+from types import TracebackType
 from typing import Any
 from urllib.parse import urljoin
 
@@ -125,7 +126,12 @@ class PolymarketClient:
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # type: ignore
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """
         Async context manager exit.
 
