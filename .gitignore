@@ -63,10 +63,8 @@ Thumbs.db
 # Property-based testing
 .hypothesis/
 
-# AI assistant config
+# Project specific
 CLAUDE.md
 AGENTS.md
-
-# Project specific
 config/config.local.yaml
 research/data/
