@@ -9,8 +9,8 @@
 
 ```bash
 # Clone and install
-git clone https://github.com/jacob7choi-xyz/polymarket-arbitrage.git
-cd polymarket-arbitrage
+git clone https://github.com/jacob7choi-xyz/polymarket-research.git
+cd polymarket-research
 uv sync --group dev
 
 # Install pre-commit hooks

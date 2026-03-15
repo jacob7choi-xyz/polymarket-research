@@ -1,25 +1,28 @@
-# Polymarket Arbitrage Detector
+# Polymarket Research
 
-> **Production-grade arbitrage detection system for Polymarket prediction markets**
+> **Arbitrage detection and probability calibration research for Polymarket prediction markets**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Linting: ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![codecov](https://codecov.io/gh/jacob7choi-xyz/polymarket-arbitrage/branch/main/graph/badge.svg)](https://codecov.io/gh/jacob7choi-xyz/polymarket-arbitrage)
+[![codecov](https://codecov.io/gh/jacob7choi-xyz/polymarket-research/branch/main/graph/badge.svg)](https://codecov.io/gh/jacob7choi-xyz/polymarket-research)
 
 ---
 
 ## Project Goals
 
-This is a **learning project** focused on demonstrating production-grade software engineering:
+This is a **learning and portfolio project** with two components:
+
+1. **Arbitrage Detection Engine** -- a production-grade paper trading system that detects when YES + NO prices sum to less than $0.99 on Polymarket binary markets, simulating trades via a paper trading engine.
+2. **Research Pipeline** -- data collection and calibration analysis studying how well Polymarket prices predict actual outcomes, with 9,900+ resolved markets analyzed.
 
 - **Paper trading only** (no real money)
 - **Production patterns** (circuit breaker, retry, rate limiting)
 - **Clean architecture** (separation of concerns, dependency injection)
 - **Comprehensive testing** (unit, integration, property-based)
 - **Full observability** (structured logging, Prometheus metrics)
-- **Interview-ready** (inline comments explaining architectural decisions)
+- **Calibration research** (probability accuracy, category-level bias analysis)
 
 **This is NOT a production trading system.**
 
@@ -28,6 +31,7 @@ This is a **learning project** focused on demonstrating production-grade softwar
 ## Table of Contents
 
 - [System Architecture](#system-architecture)
+- [Research Pipeline](#research-pipeline)
 - [Key Features](#key-features)
 - [Technology Stack](#technology-stack)
 - [Quick Start](#quick-start)
@@ -85,6 +89,32 @@ Buy both outcomes:
 - Transaction fees (~2%)
 - Slippage (prices move during execution)
 - Safety buffer
+
+---
+
+## Research Pipeline
+
+The research pipeline collects resolved market data and analyzes how well Polymarket prices predict actual outcomes.
+
+### Data Flow
+
+```
+Gamma API -> fetch_markets.py -> SQLite -> fetch_prices.py -> SQLite -> calibration.py -> plots
+```
+
+1. **Data Collection**: Fetches resolved binary markets from the Gamma API with resumable checkpointing
+2. **Price Histories**: Pulls CLOB price snapshots at multiple time horizons (24h, 6h, 1h before resolution)
+3. **Calibration Analysis**: Compares predicted probabilities against actual resolution rates
+
+### Key Findings
+
+- **9,900+ resolved markets** analyzed
+- **Overall calibration**: Markets are well-calibrated, especially 1h before resolution
+- **Crypto markets**: Systematic overconfidence -- bulls consistently price YES too high
+- **Sports markets**: Well-calibrated across the full probability range
+- **Dataset skew**: ~95% of markets resolve near certainty; only ~50 genuinely uncertain markets
+
+See `research/ROADMAP.md` for detailed findings and next steps.
 
 ---
 
@@ -170,8 +200,8 @@ Buy both outcomes:
 
 ```bash
 # Clone repository
-git clone https://github.com/jacob7choi-xyz/polymarket-arbitrage.git
-cd polymarket-arbitrage
+git clone https://github.com/jacob7choi-xyz/polymarket-research.git
+cd polymarket-research
 
 # Install all dependencies (including dev)
 uv sync --group dev
@@ -230,9 +260,9 @@ uv run pytest -x
 ## Project Structure
 
 ```
-polymarket-arbitrage/
+polymarket-research/
 ├── src/
-│   └── polymarket_arbitrage/       # Main package
+│   └── polymarket_arbitrage/       # Arbitrage detection engine
 │       ├── __init__.py
 │       ├── main.py                 # Orchestrator & composition root
 │       ├── api/                    # API client layer
@@ -257,6 +287,18 @@ polymarket-arbitrage/
 │       └── monitoring/             # Observability
 │           ├── logging.py          # Structured logging (structlog)
 │           └── metrics.py          # Prometheus metrics
+│
+├── research/                       # Research pipeline (separate system)
+│   ├── pipeline/                   # Data collection
+│   │   ├── fetch_markets.py        # Fetch resolved markets from Gamma API
+│   │   ├── fetch_prices.py         # Fetch CLOB price histories
+│   │   ├── checkpoint.py           # Resumable checkpoint system
+│   │   └── storage.py              # SQLite schema and helpers
+│   ├── analysis/                   # Data analysis
+│   │   ├── calibration.py          # Calibration curve analysis
+│   │   ├── infer_categories.py     # Category inference
+│   │   └── extract_preresolution_prices.py
+│   └── ROADMAP.md                  # Research findings and next steps
 │
 ├── tests/                          # Test suite
 │   ├── conftest.py                 # Shared fixtures
@@ -515,7 +557,7 @@ rate(arbitrage_opportunities_detected_total[1h])
   "event": "arbitrage_detected",
   "timestamp": "2025-01-15T10:30:00.123456Z",
   "level": "info",
-  "app_name": "polymarket-arbitrage-detector",
+  "app_name": "polymarket-research",
   "market_id": "0x123abc",
   "question": "Will Bitcoin reach $100k?",
   "yes_price": 0.48,
