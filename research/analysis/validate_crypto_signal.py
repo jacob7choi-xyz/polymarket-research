@@ -35,6 +35,17 @@ class MarketRow:
     closed_at: str
 
 
+@dataclass(frozen=True)
+class CalibrationBin:
+    """A single bin in a calibration breakdown."""
+
+    range: str
+    count: int
+    avg_price: float
+    actual_rate: float
+    error: float
+
+
 def load_crypto_markets(db_path: str) -> list[MarketRow]:
     """Load crypto markets with 24h-before prices in the uncertain range."""
     conn = sqlite3.connect(db_path)
@@ -99,13 +110,13 @@ def calibration_error(
 def calibration_error_by_bin(
     markets: list[MarketRow],
     n_bins: int = 5,
-) -> list[dict[str, str | float | int]]:
+) -> list[CalibrationBin]:
     """Compute calibration error per price bin."""
     prices = np.array([m.price for m in markets])
     outcomes = np.array([m.resolved_yes for m in markets])
 
     bin_edges = np.linspace(0.05, 0.95, n_bins + 1)
-    bins: list[dict[str, str | float | int]] = []
+    bins: list[CalibrationBin] = []
     for i in range(n_bins):
         lo, hi = bin_edges[i], bin_edges[i + 1]
         mask = (prices >= lo) & (prices < hi) if i < n_bins - 1 else (prices >= lo) & (prices <= hi)
@@ -114,13 +125,13 @@ def calibration_error_by_bin(
         avg_price = float(prices[mask].mean())
         actual_rate = float(outcomes[mask].mean())
         bins.append(
-            {
-                "range": f"{lo:.0%}-{hi:.0%}",
-                "count": int(mask.sum()),
-                "avg_price": avg_price,
-                "actual_rate": actual_rate,
-                "error": avg_price - actual_rate,
-            }
+            CalibrationBin(
+                range=f"{lo:.0%}-{hi:.0%}",
+                count=int(mask.sum()),
+                avg_price=avg_price,
+                actual_rate=actual_rate,
+                error=avg_price - actual_rate,
+            )
         )
     return bins
 
@@ -254,8 +265,8 @@ def test_by_price_range(markets: list[MarketRow]) -> None:
     print("  " + "-" * 47)
     for b in bins:
         print(
-            f"  {b['range']:<12} {b['count']:>5} {b['avg_price']:>9.3f} "
-            f"{b['actual_rate']:>7.3f} {b['error']:>+7.3f}"
+            f"  {b.range:<12} {b.count:>5} {b.avg_price:>9.3f} "
+            f"{b.actual_rate:>7.3f} {b.error:>+7.3f}"
         )
 
 
