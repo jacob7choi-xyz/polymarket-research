@@ -70,11 +70,88 @@ Built per-category calibration curves using 24h-before prices. Categories with 5
 
 **Primary hypothesis:** Crypto markets on Polymarket attract participants with directional bias (bulls pricing YES too high), creating a persistent overconfidence pattern that may be exploitable.
 
-### Next steps
+### Next steps (from initial analysis)
 
-1. **Deep-dive into Crypto overconfidence** — Is this robust across time periods? Does it survive volume-weighting? Is it driven by a few outlier markets or a broad pattern?
-2. **Backtest against transaction costs** — Polymarket charges ~2% on winnings. The Crypto bias must exceed this threshold to be a real edge. Simulate a strategy that fades Crypto overconfidence at the 24h mark and measure net returns.
-3. **Scale the dataset** — 50+ Crypto markets is a start, but 200+ would give much more statistical confidence. Continue fetching via Gamma API or consider Dune Analytics for faster access.
+1. ~~Deep-dive into Crypto overconfidence~~ -- Done. See validation results below.
+2. ~~Backtest against transaction costs~~ -- Not needed. Signal was noise.
+3. ~~Scale the dataset~~ -- Done. 497 crypto markets (up from ~50).
+
+---
+
+## Crypto Overconfidence: Validation and Null Result
+
+Ran `research/analysis/validate_crypto_signal.py` (bootstrap CI, volume weighting, time-period splits, cross-category comparison) on 497 crypto markets with 24h-before prices in the 0.05-0.95 range.
+
+### Methodology
+
+Five tests applied to the crypto overconfidence hypothesis:
+
+1. **Bootstrap confidence intervals** (10,000 iterations) on mean calibration error (predicted - actual). Positive error = overconfidence.
+2. **Volume-weighted calibration error** to check whether the signal is driven by low-liquidity ghost markets.
+3. **Time-period consistency** -- split by month, bootstrap each period independently.
+4. **Price-bin breakdown** -- calibration error by quintile across the probability spectrum.
+5. **Cross-category comparison** -- same methodology applied to all categories to contextualize the result.
+
+### Results
+
+**Test 1 -- Statistical Significance:**
+The raw calibration error for crypto is +0.0104 (prices ~1% higher than outcomes on average). The 95% bootstrap CI is [-0.027, +0.048]. The interval includes zero.
+
+**Conclusion: Not statistically significant.** We cannot reject the null hypothesis that crypto markets are perfectly calibrated.
+
+**Test 2 -- Volume Weighting:**
+Volume-weighted error is +0.019 with CI [-0.048, +0.084]. Wider interval, still includes zero. The signal does not strengthen when weighting by volume -- if anything, it becomes noisier.
+
+**Test 3 -- Time Periods:**
+- 2026-02 (n=393): error +0.020, CI [-0.022, +0.060] -- not significant
+- 2026-03 (n=104): error -0.025, CI [-0.113, +0.063] -- not significant, direction reverses
+
+The signal is not consistent across months. February shows slight overconfidence, March shows slight underconfidence. This is noise, not a persistent pattern.
+
+**Test 4 -- Price Bins:**
+
+| Bin | N | Avg Price | Actual Rate | Error |
+|-----|---|-----------|-------------|-------|
+| 5-23% | 176 | 0.126 | 0.182 | -0.056 |
+| 23-41% | 105 | 0.315 | 0.248 | +0.067 |
+| 41-59% | 77 | 0.502 | 0.455 | +0.047 |
+| 59-77% | 54 | 0.675 | 0.667 | +0.009 |
+| 77-95% | 85 | 0.881 | 0.835 | +0.046 |
+
+Mixed signal. Low-probability crypto markets are actually *underconfident* (5-23% bin: -0.056), while mid-range markets show mild overconfidence. The pattern is inconsistent and bins have small sample sizes (n=54 to n=176).
+
+**Test 5 -- Cross-Category Comparison:**
+
+| Category | N | Error | 95% CI | Significant? |
+|----------|---|-------|--------|-------------|
+| AI/Tech | 108 | -0.064 | [-0.146, +0.015] | No |
+| Crypto | 497 | +0.010 | [-0.026, +0.048] | No |
+| Other | 899 | -0.012 | [-0.040, +0.016] | No |
+| Politics | 323 | -0.049 | [-0.096, -0.003] | Yes (underconfident) |
+| Sports | 2267 | -0.017 | [-0.035, +0.002] | No |
+| Weather | 876 | -0.018 | [-0.045, +0.008] | No |
+
+Crypto is the *only* category with a positive error, but it's not significant. The one statistically significant finding is **Politics: systematic underconfidence** (CI entirely below zero). Political markets are priced too low relative to actual outcomes.
+
+### Why the Initial Finding Was Misleading
+
+The original calibration curve analysis (which suggested "systematic overconfidence" in crypto) suffered from:
+
+1. **Small sample artifacts.** The initial analysis had ~50 crypto markets in the uncertain range. With 497, the effect shrinks from visually obvious to statistically insignificant.
+2. **Binning artifacts.** 10-bin calibration curves with small counts per bin amplify noise. A single outlier market in a bin of 15 can shift the curve visually.
+3. **No confidence intervals.** Without CIs, a 3-4 percentage point deviation looks meaningful on a plot but is well within sampling noise.
+
+### Implications
+
+- **No exploitable edge in crypto markets.** The overconfidence hypothesis is rejected. A backtest would be fitting noise.
+- **Politics underconfidence is the one real signal** in the dataset. This warrants further investigation: are political markets systematically underpriced? Does this survive after Polymarket's ~2% fee?
+- **Polymarket crowds are well-calibrated overall.** Across 4,970 uncertain markets, the aggregate calibration error is small. The market is efficient.
+
+### Next Steps
+
+1. **Investigate political underconfidence** -- the only statistically significant bias found. Deep-dive with the same 5-test methodology.
+2. **Backtest a politics contrarian strategy** -- if the edge exceeds transaction costs, simulate it.
+3. **Consider non-price features** -- volume trajectory, time-to-resolution, trader count may predict miscalibration better than category alone.
 
 ---
 
