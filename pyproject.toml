@@ -12,10 +12,11 @@ authors = [
 
 dependencies = [
     "httpx[http2]>=0.26.0,<0.29.0",
-    "pydantic>=2.5.0",
-    "pydantic-settings>=2.1.0",
+    "numpy>=1.26.0",
+    "pydantic>=2.5.0,<3.0",
+    "pydantic-settings>=2.1.0,<3.0",
     "structlog>=24.1.0",
-    "prometheus-client>=0.19.0",
+    "prometheus-client>=0.19.0,<1.0",
     "pyyaml>=6.0",
     "matplotlib>=3.8.0",
 ]
@@ -23,14 +24,14 @@ dependencies = [
 [dependency-groups]
 test = [
     "pytest>=7.4.0",
-    "pytest-asyncio>=0.23.0",
+    "pytest-asyncio>=1.0.0",
     "pytest-cov>=4.1.0",
     "pytest-httpx>=0.28.0",
     "hypothesis>=6.92.0",
 ]
 lint = [
     "mypy>=1.8.0",
-    "ruff>=0.1.9",
+    "ruff>=0.15.0,<1.0",
     "types-pyyaml>=6.0.12",
 ]
 dev = [
@@ -53,7 +54,6 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "C4", "UP"]
-ignore = ["E501"]
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
@@ -71,15 +71,12 @@ warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
 strict_optional = true
+warn_unreachable = true
 
 [[tool.mypy.overrides]]
 module = [
     "matplotlib.*",
     "prometheus_client.*",
-    "pytest.*",
-    "httpx.*",
-    "structlog.*",
-    "pydantic_settings.*",
 ]
 ignore_missing_imports = true
 

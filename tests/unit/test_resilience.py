@@ -198,10 +198,10 @@ class TestCircuitBreaker:
             with pytest.raises(ValueError):
                 await failing()
 
-        assert cb.state == CircuitBreakerState.OPEN
+        assert cb.state.value == CircuitBreakerState.OPEN.value
 
         await cb.reset()
-        assert cb.state == CircuitBreakerState.CLOSED  # type: ignore[comparison-overlap]
+        assert cb.state == CircuitBreakerState.CLOSED
         assert cb.failure_count == 0
 
     @pytest.mark.asyncio

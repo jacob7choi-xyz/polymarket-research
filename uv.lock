@@ -732,6 +732,7 @@ source = { editable = "." }
 dependencies = [
     { name = "httpx", extra = ["http2"] },
     { name = "matplotlib" },
+    { name = "numpy" },
     { name = "prometheus-client" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -768,9 +769,10 @@ test = [
 requires-dist = [
     { name = "httpx", extras = ["http2"], specifier = ">=0.26.0,<0.29.0" },
     { name = "matplotlib", specifier = ">=3.8.0" },
-    { name = "prometheus-client", specifier = ">=0.19.0" },
-    { name = "pydantic", specifier = ">=2.5.0" },
-    { name = "pydantic-settings", specifier = ">=2.1.0" },
+    { name = "numpy", specifier = ">=1.26.0" },
+    { name = "prometheus-client", specifier = ">=0.19.0,<1.0" },
+    { name = "pydantic", specifier = ">=2.5.0,<3.0" },
+    { name = "pydantic-settings", specifier = ">=2.1.0,<3.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "structlog", specifier = ">=24.1.0" },
 ]
@@ -781,21 +783,21 @@ dev = [
     { name = "mypy", specifier = ">=1.8.0" },
     { name = "pre-commit", specifier = ">=3.6.0" },
     { name = "pytest", specifier = ">=7.4.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "pytest-cov", specifier = ">=4.1.0" },
     { name = "pytest-httpx", specifier = ">=0.28.0" },
-    { name = "ruff", specifier = ">=0.1.9" },
+    { name = "ruff", specifier = ">=0.15.0,<1.0" },
     { name = "types-pyyaml", specifier = ">=6.0.12" },
 ]
 lint = [
     { name = "mypy", specifier = ">=1.8.0" },
-    { name = "ruff", specifier = ">=0.1.9" },
+    { name = "ruff", specifier = ">=0.15.0,<1.0" },
     { name = "types-pyyaml", specifier = ">=6.0.12" },
 ]
 test = [
     { name = "hypothesis", specifier = ">=6.92.0" },
     { name = "pytest", specifier = ">=7.4.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "pytest-cov", specifier = ">=4.1.0" },
     { name = "pytest-httpx", specifier = ">=0.28.0" },
 ]

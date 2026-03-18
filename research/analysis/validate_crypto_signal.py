@@ -56,6 +56,8 @@ def load_crypto_markets(db_path: str) -> list[MarketRow]:
         WHERE category = 'Crypto'
           AND price_24h_before BETWEEN 0.05 AND 0.95
           AND resolved_yes IS NOT NULL
+          AND closed_at IS NOT NULL
+          AND volume_usd IS NOT NULL
         """
     ).fetchall()
     conn.close()
@@ -71,6 +73,8 @@ def load_all_categories(db_path: str) -> dict[str, list[MarketRow]]:
         FROM markets
         WHERE price_24h_before BETWEEN 0.05 AND 0.95
           AND resolved_yes IS NOT NULL
+          AND closed_at IS NOT NULL
+          AND volume_usd IS NOT NULL
         """
     ).fetchall()
     conn.close()
@@ -103,6 +107,8 @@ def calibration_error(
     if weights is None:
         return float(np.mean(prices - outcomes))
     else:
+        if weights.sum() == 0:
+            return float(np.mean(prices - outcomes))
         w = weights / weights.sum()
         return float(np.sum(w * (prices - outcomes)))
 
@@ -148,20 +154,20 @@ def bootstrap_calibration_error(
 ) -> tuple[float, float, float]:
     """Bootstrap the mean calibration error. Returns (mean, ci_lower, ci_upper)."""
     n = len(markets)
-    errors = np.empty(n_iterations)
 
     prices = np.array([m.price for m in markets])
     outcomes = np.array([m.resolved_yes for m in markets])
     diffs = prices - outcomes
 
-    for i in range(n_iterations):
-        idx = RNG.integers(0, n, size=n)
-        if weights is None:
-            errors[i] = diffs[idx].mean()
-        else:
-            w = weights[idx]
-            w = w / w.sum()
-            errors[i] = (w * diffs[idx]).sum()
+    idx = RNG.integers(0, n, size=(n_iterations, n))
+    if weights is None:
+        errors = diffs[idx].mean(axis=1)
+    else:
+        w = weights[idx]
+        w_sums = w.sum(axis=1, keepdims=True)
+        w_sums = np.where(w_sums == 0, 1.0, w_sums)
+        w = w / w_sums
+        errors = (w * diffs[idx]).sum(axis=1)
 
     mean = float(np.mean(errors))
     ci_lower = float(np.percentile(errors, 2.5))
@@ -247,10 +253,10 @@ def test_time_periods(markets: list[MarketRow]) -> None:
             continue
         error = calibration_error(month_markets)
         mean, ci_lo, ci_hi = bootstrap_calibration_error(month_markets, n_iterations=5000)
-        sig = "YES" if ci_lo > 0 else "no"
-        print(
-            f"  {month:<10} {len(month_markets):>5} {error:>+.4f} [{ci_lo:>+.4f}, {ci_hi:>+.4f}] {sig:>6}"
-        )
+        sig = "YES" if ci_lo > 0 else ("yes*" if ci_hi < 0 else "no")
+        n = len(month_markets)
+        ci = f"[{ci_lo:>+.4f}, {ci_hi:>+.4f}]"
+        print(f"  {month:<10} {n:>5} {error:>+.4f} {ci:>22} {sig:>6}")
 
 
 def test_by_price_range(markets: list[MarketRow]) -> None:
@@ -288,9 +294,8 @@ def test_vs_other_categories(db_path: str) -> None:
         error = calibration_error(cat_markets)
         mean, ci_lo, ci_hi = bootstrap_calibration_error(cat_markets, n_iterations=5000)
         sig = "YES" if ci_lo > 0 else ("yes*" if ci_hi < 0 else "no")
-        print(
-            f"  {cat:<12} {len(cat_markets):>5} {error:>+.4f} [{ci_lo:>+.4f}, {ci_hi:>+.4f}] {sig:>6}"
-        )
+        ci = f"[{ci_lo:>+.4f}, {ci_hi:>+.4f}]"
+        print(f"  {cat:<12} {len(cat_markets):>5} {error:>+.4f} {ci:>22} {sig:>6}")
 
 
 # ---------------------------------------------------------------------------
