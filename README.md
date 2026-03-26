@@ -20,9 +20,9 @@ This is a **learning and portfolio project** with two components:
 - **Paper trading only** (no real money)
 - **Production patterns** (circuit breaker, retry, rate limiting)
 - **Clean architecture** (separation of concerns, dependency injection)
-- **Comprehensive testing** (unit, integration, property-based)
+- **254 tests, 60% coverage** (unit, integration, property-based)
 - **Full observability** (structured logging, Prometheus metrics)
-- **Calibration research** (probability accuracy, category-level bias analysis)
+- **Calibration research** (hypothesis testing, backtesting, +20.5% net ROI strategy)
 
 **This is NOT a production trading system.**
 
@@ -105,16 +105,18 @@ Gamma API -> fetch_markets.py -> SQLite -> fetch_prices.py -> SQLite -> calibrat
 1. **Data Collection**: Fetches resolved binary markets from the Gamma API with resumable checkpointing
 2. **Price Histories**: Pulls CLOB price snapshots at multiple time horizons (24h, 6h, 1h before resolution)
 3. **Calibration Analysis**: Compares predicted probabilities against actual resolution rates
+4. **Hypothesis Validation**: Bootstrap CI testing, volume weighting, time-period splits, cross-category comparison
+5. **Backtesting**: Strategy simulation with fee modeling, position sizing, and bootstrap confidence intervals
 
 ### Key Findings
 
-- **9,900+ resolved markets** analyzed
-- **Overall calibration**: Markets are well-calibrated, especially 1h before resolution
-- **Crypto markets**: Systematic overconfidence -- bulls consistently price YES too high
+- **9,900+ resolved markets** analyzed across 6 categories (Sports, Other, Weather, Crypto, Politics, AI/Tech)
+- **Overall calibration**: Markets are well-calibrated in aggregate, especially 1h before resolution
+- **Crypto overconfidence: null result** -- initial bias signal (+1%) does not survive bootstrap CI testing (95% CI includes zero), volume weighting, or time-period splits. The original finding was a small-sample artifact.
+- **Politics underconfidence: confirmed** -- political markets are systematically underpriced. Backtest of a contrarian YES strategy (0.40-0.80 range) yields **+20.5% net ROI** after 2% fees (139 trades, 69.1% win rate, 95% CI [+5.9%, +34.4%])
 - **Sports markets**: Well-calibrated across the full probability range
-- **Dataset skew**: ~95% of markets resolve near certainty; only ~50 genuinely uncertain markets
 
-See `research/ROADMAP.md` for detailed findings and next steps.
+See `research/ROADMAP.md` for detailed methodology, results tables, and next steps.
 
 ---
 
@@ -175,12 +177,18 @@ See `research/ROADMAP.md` for detailed findings and next steps.
 - **Prometheus**: Metrics collection
 - **Grafana**: Dashboards and visualization
 
+### Research
+- **numpy**: Vectorized bootstrap CI, calibration analysis
+- **matplotlib**: Calibration curve visualization
+- **SQLite**: Research data storage (9,900+ markets)
+
 ### Development
 - **uv**: Package management and builds
 - **pytest**: Testing framework with async support
 - **hypothesis**: Property-based testing
-- **mypy**: Strict static type checking
+- **mypy**: Strict static type checking (near-strict, warn_unreachable)
 - **ruff**: Linting and formatting
+- **GitHub Actions**: CI pipeline (lint + test, Python 3.11/3.12/3.13 matrix)
 
 ### Infrastructure
 - **Docker**: Multi-stage production build
@@ -296,17 +304,24 @@ polymarket-research/
 │   │   └── storage.py              # SQLite schema and helpers
 │   ├── analysis/                   # Data analysis
 │   │   ├── calibration.py          # Calibration curve analysis
+│   │   ├── validate_crypto_signal.py # 5-test crypto bias validation suite
+│   │   ├── backtest_politics.py    # Politics contrarian strategy backtest
 │   │   ├── infer_categories.py     # Category inference
 │   │   └── extract_preresolution_prices.py
 │   └── ROADMAP.md                  # Research findings and next steps
 │
-├── tests/                          # Test suite
+├── tests/                          # Test suite (254 tests, 60% coverage)
 │   ├── conftest.py                 # Shared fixtures
 │   ├── unit/                       # Unit tests
-│   │   ├── test_domain_models.py
-│   │   ├── test_parsers.py
-│   │   ├── test_strategies.py
-│   │   └── test_paper_trader.py
+│   │   ├── test_domain_models.py   # Token, Market, ArbitrageOpportunity (52 tests)
+│   │   ├── test_parsers.py         # Multi-format response parsing (17 tests)
+│   │   ├── test_strategies.py      # Opportunity detection, filtering (12 tests)
+│   │   ├── test_paper_trader.py    # Trade execution, capital, positions (13 tests)
+│   │   ├── test_resilience.py      # Circuit breaker, retry, rate limiter (38 tests)
+│   │   ├── test_endpoints.py       # URL building, fallback strategies (34 tests)
+│   │   ├── test_metrics.py         # Prometheus metrics recording (22 tests)
+│   │   ├── test_settings.py        # Config loading, validation, priority (35 tests)
+│   │   └── test_client.py          # HTTP client, error translation (31 tests)
 │   ├── integration/                # Integration tests (future)
 │   └── property/                   # Property-based tests (future)
 │
@@ -473,11 +488,13 @@ Fixed window (60 req/min):
 
 ## Testing
 
-### Test Coverage
+### Test Coverage (254 tests, 60%)
 
-- **Unit Tests**: Domain models, parsers, strategies, execution
+- **Unit Tests**: Domain models, parsers, strategies, execution, API client, resilience patterns, endpoints, metrics, settings
 - **Integration Tests**: End-to-end with mocked API (future)
 - **Property-Based Tests**: Hypothesis for invariants (future)
+
+**Module coverage highlights**: settings 100%, constants 100%, client 86%, models 81%, resilience 77%, metrics 74%, response_models 72%, endpoints 62%, parsers 59%, strategies 55-57%
 
 ### Running Tests
 
