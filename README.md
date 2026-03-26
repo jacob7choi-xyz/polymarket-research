@@ -6,7 +6,7 @@
 [![Linting: ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![codecov](https://codecov.io/gh/jacob7choi-xyz/polymarket-research/branch/main/graph/badge.svg)](https://codecov.io/gh/jacob7choi-xyz/polymarket-research)
+[![codecov](https://codecov.io/gh/jacob7choi-xyz/polymarket-arbitrage/branch/main/graph/badge.svg)](https://codecov.io/gh/jacob7choi-xyz/polymarket-arbitrage)
 
 ---
 
