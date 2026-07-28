@@ -48,6 +48,52 @@ class TestPriceDiscrepancyStrategy:
         assert opportunities[0].market.market_id == sample_market.market_id
 
     @pytest.mark.asyncio
+    async def test_detect_opportunities_with_looser_threshold(self) -> None:
+        """Test a configured threshold looser than the 0.99 default is honored.
+
+        Regression: expected_profit_per_dollar was derived from the hardcoded
+        0.99 constant, so a market that passed a looser strategy threshold was
+        assigned zero profit and rejected by the opportunity validator.
+        """
+        from datetime import datetime, timedelta
+
+        from polymarket_arbitrage.domain.models import Token
+
+        strategy = PriceDiscrepancyStrategy(
+            arbitrage_threshold=Decimal("0.999"),
+            min_liquidity=Decimal("1000"),
+            min_volume=Decimal("10000"),
+            max_position_size=Decimal("100"),
+        )
+        # 0.50 + 0.495 = 0.995: below 0.999 but above the 0.99 constant
+        market = Market(
+            market_id="0xthin",
+            condition_id="0xcond",
+            question="Thin spread market",
+            yes_token=Token(token_id="0xyes", outcome="Yes", price=Decimal("0.50")),
+            no_token=Token(token_id="0xno", outcome="No", price=Decimal("0.495")),
+            volume=Decimal("50000"),
+            liquidity=Decimal("10000"),
+            end_date=datetime.now() + timedelta(days=30),
+            active=True,
+        )
+
+        opportunities = await strategy.detect_opportunities([market])
+
+        assert len(opportunities) == 1
+        assert opportunities[0].expected_profit_per_dollar == Decimal("0.005")
+
+    @pytest.mark.asyncio
+    async def test_detect_opportunities_with_timezone_aware_market(
+        self, strategy: PriceDiscrepancyStrategy, sample_market_tz_aware: Market
+    ) -> None:
+        """Test detection works on markets parsed from live API payloads."""
+        opportunities = await strategy.detect_opportunities([sample_market_tz_aware])
+
+        assert len(opportunities) == 1
+        assert opportunities[0].market.market_id == "0xmarket_tz"
+
+    @pytest.mark.asyncio
     async def test_detect_opportunities_filters_no_arbitrage(
         self,
         strategy: PriceDiscrepancyStrategy,

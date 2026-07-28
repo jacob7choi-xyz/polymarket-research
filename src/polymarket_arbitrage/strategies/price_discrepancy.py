@@ -176,10 +176,12 @@ class PriceDiscrepancyStrategy(ArbitrageStrategy):
             )
 
             # Create opportunity
+            # Profit is measured against this strategy's configured threshold,
+            # not the package default, so the two cannot disagree
             opportunity = ArbitrageOpportunity(
                 market=market,
                 detected_at=datetime.now(),
-                expected_profit_per_dollar=market.arbitrage_profit_per_dollar,
+                expected_profit_per_dollar=market.arbitrage_profit_at(self.arbitrage_threshold),
                 recommended_position_size=position_size,
             )
 

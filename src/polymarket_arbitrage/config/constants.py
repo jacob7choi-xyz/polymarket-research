@@ -55,6 +55,12 @@ MARKET_ENDPOINT_PATTERNS = [
     "/markets",  # Query param based (needs ?condition_id={id})
 ]
 
+# Upper bound on pages walked per detection cycle
+# Gamma rejects offsets beyond ~2100 with HTTP 422 and directs callers to its
+# keyset endpoint, so this bounds the loop well before an unbounded pager could
+# run away if the API ever returns full pages indefinitely
+MAX_MARKET_PAGES = 100
+
 # ============================================================================
 # Market Categories
 # ============================================================================

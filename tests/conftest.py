@@ -111,6 +111,30 @@ def sample_market_low_liquidity() -> Market:
 
 
 @pytest.fixture
+def sample_market_tz_aware() -> Market:
+    """
+    Sample market with a timezone-aware end_date.
+
+    The Gamma API returns endDate as an ISO string with a 'Z' suffix, which
+    Pydantic parses into a timezone-aware datetime. Fixtures built from a naive
+    datetime.now() do not exercise that path, so this fixture mirrors production
+    data shape.
+    """
+    return Market(
+        market_id="0xmarket_tz",
+        condition_id="0xcond_tz",
+        question="Will this market parse from the live API?",
+        yes_token=Token(token_id="0xyes_tz", outcome="Yes", price=Decimal("0.48")),
+        no_token=Token(token_id="0xno_tz", outcome="No", price=Decimal("0.48")),
+        volume=Decimal("50000"),
+        liquidity=Decimal("10000"),
+        end_date="2099-01-01T00:00:00Z",  # type: ignore[arg-type]
+        active=True,
+        category="crypto",
+    )
+
+
+@pytest.fixture
 def sample_opportunity(sample_market: Market) -> ArbitrageOpportunity:
     """Sample arbitrage opportunity for testing."""
     return ArbitrageOpportunity(

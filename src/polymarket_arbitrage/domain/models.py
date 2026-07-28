@@ -19,6 +19,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
+from ..config.constants import ARBITRAGE_THRESHOLD
+
 
 class Token(BaseModel):
     """
@@ -144,10 +146,24 @@ class Market(BaseModel):
         - No market risk: Don't care which outcome wins
         - Execution risk: Only risk is failure to execute
         """
-        # Threshold from configuration (default 0.99)
-        from ..config.constants import ARBITRAGE_THRESHOLD
+        return self.is_arbitrage_at(ARBITRAGE_THRESHOLD)
 
-        return self.total_implied_probability < ARBITRAGE_THRESHOLD
+    def is_arbitrage_at(self, threshold: Decimal) -> bool:
+        """
+        Check for arbitrage against a caller-supplied threshold.
+
+        Why not just the computed field?
+        - Strategies are configured with their own threshold
+        - The computed field is pinned to the package default, so a strategy
+          reading it would silently disagree with its own configuration
+
+        Args:
+            threshold: YES + NO must be below this to qualify.
+
+        Returns:
+            True if the combined price leaves room for profit.
+        """
+        return self.total_implied_probability < threshold
 
     @computed_field  # type: ignore
     @property
@@ -168,15 +184,35 @@ class Market(BaseModel):
         - Kelly Criterion: Optimal position sizing formula
         - Risk management: Don't bet everything on one opportunity
         """
-        if self.is_arbitrage_opportunity:
+        return self.arbitrage_profit_at(ARBITRAGE_THRESHOLD)
+
+    def arbitrage_profit_at(self, threshold: Decimal) -> Decimal:
+        """
+        Expected profit per $1 invested, against a caller-supplied threshold.
+
+        Args:
+            threshold: YES + NO must be below this to qualify.
+
+        Returns:
+            Profit per dollar, or zero when the market does not qualify.
+        """
+        if self.is_arbitrage_at(threshold):
             return Decimal("1.0") - self.total_implied_probability
         return Decimal("0")
 
     @computed_field  # type: ignore
     @property
     def is_expired(self) -> bool:
-        """Check if market has ended."""
-        return self.end_date < datetime.now()
+        """
+        Check if market has ended.
+
+        The Gamma API returns endDate with a 'Z' suffix, so end_date is usually
+        timezone-aware, while hand-built markets are typically naive. Comparing
+        across the two raises TypeError, so read the current time in whichever
+        form end_date uses.
+        """
+        now = datetime.now(self.end_date.tzinfo)
+        return self.end_date < now
 
     @computed_field  # type: ignore
     @property

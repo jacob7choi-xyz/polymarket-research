@@ -24,7 +24,9 @@ import uuid
 
 from .api.client import PolymarketClient
 from .api.resilience import CircuitBreaker, RateLimiter
+from .config.constants import MAX_MARKET_PAGES
 from .config.settings import Settings, get_settings
+from .domain.exceptions import APIError
 from .domain.models import Market, Token
 from .execution.paper_trader import PaperTrader
 from .execution.position_tracker import PositionTracker
@@ -89,11 +91,24 @@ class Application:
         3. Business logic (strategy)
         4. Execution layer (trader)
 
+        The API client is injected by the caller, which owns its lifecycle via
+        `async with`. Building one here would discard the entered client and
+        leave an instance with no underlying session.
+
+        Raises:
+            RuntimeError: If api_client was not injected before startup.
+
         Interview Point - Initialization Order:
         - Bottom-up: Build from dependencies to dependents
         - Fail fast: Validate everything before starting
         - Health checks: Verify external dependencies work
         """
+        if self.api_client is None:
+            raise RuntimeError(
+                "api_client must be injected before startup(). "
+                "Enter PolymarketClient as an async context manager and assign it."
+            )
+
         logger.info(
             "application_starting",
             config={
@@ -128,10 +143,7 @@ class Application:
             recovery_timeout=self.settings.circuit_breaker_recovery_timeout_seconds,
         )
 
-        # Layer 3: API Client
-        self.api_client = PolymarketClient(
-            base_url=str(self.settings.polymarket_api_url),
-        )
+        # Layer 3: API Client is injected by the caller (see docstring)
 
         # Layer 4: Strategy
         self.strategy = PriceDiscrepancyStrategy(
@@ -150,21 +162,19 @@ class Application:
         Order matters (reverse of startup):
         1. Stop accepting new work (set running = False)
         2. Finish current work (detection cycle completes)
-        3. Close external connections (API client)
-        4. Save state / log final metrics
+        3. Save state / log final metrics
+
+        The API client is closed by whoever entered it, not here -- closing an
+        injected resource we do not own would break a caller that intends to
+        reuse it.
 
         Interview Point - Graceful Shutdown:
         - Kubernetes sends SIGTERM, waits, then SIGKILL
         - Complete current work before exiting
-        - Close connections properly (no resource leaks)
         - Log final state for debugging
         """
         logger.info("application_shutting_down")
         self.running = False
-
-        # Close API client
-        if self.api_client:
-            await self.api_client.__aexit__(None, None, None)
 
         # Log final performance
         if self.paper_trader:
@@ -196,7 +206,7 @@ class Application:
             offset = 0
             limit = 100  # Max per request
 
-            while True:
+            for _page in range(MAX_MARKET_PAGES):
                 params: dict[str, Any] = {
                     "active": "true",
                     "closed": "false",
@@ -204,7 +214,18 @@ class Application:
                     "offset": str(offset),
                 }
 
-                data = await self.api_client.get_json("/markets", params=params)
+                try:
+                    data = await self.api_client.get_json("/markets", params=params)
+                except APIError as e:
+                    # Gamma rejects deep offsets with HTTP 422. Stop paging and
+                    # keep what we already have rather than losing the cycle.
+                    logger.warning(
+                        "market_pagination_stopped",
+                        offset=offset,
+                        collected=len(all_raw_markets),
+                        error=str(e),
+                    )
+                    break
 
                 # API returns a flat list
                 if isinstance(data, list):

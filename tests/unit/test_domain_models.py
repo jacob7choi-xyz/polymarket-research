@@ -14,7 +14,7 @@ Interview Point - What to Test in Domain Models:
 - Immutability (can't modify after creation)
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from pydantic import ValidationError
@@ -107,6 +107,64 @@ class TestMarket:
             active=True,
         )
         assert market.is_expired is True
+
+    def test_is_expired_with_timezone_aware_end_date(self, sample_market_tz_aware: Market) -> None:
+        """Test expiry check works when end_date carries a timezone.
+
+        Regression: the Gamma API returns endDate with a 'Z' suffix, so end_date
+        is timezone-aware while datetime.now() is naive. Comparing the two raised
+        TypeError for every market fetched from the live API.
+        """
+        assert sample_market_tz_aware.end_date.tzinfo is not None
+        assert sample_market_tz_aware.is_expired is False
+
+    def test_is_expired_true_with_timezone_aware_past_date(self) -> None:
+        """Test a timezone-aware end_date in the past is reported as expired."""
+        market = Market(
+            market_id="0xexpired_tz",
+            condition_id="0xcond",
+            question="Past market with timezone",
+            yes_token=Token(token_id="0xyes", outcome="Yes", price=Decimal("0.5")),
+            no_token=Token(token_id="0xno", outcome="No", price=Decimal("0.5")),
+            volume=Decimal("1000"),
+            liquidity=Decimal("500"),
+            end_date="2020-01-01T00:00:00Z",  # type: ignore[arg-type]
+            active=True,
+        )
+        assert market.is_expired is True
+
+    def test_is_tradeable_with_timezone_aware_end_date(
+        self, sample_market_tz_aware: Market
+    ) -> None:
+        """Test tradeability resolves for timezone-aware markets."""
+        assert sample_market_tz_aware.is_tradeable is True
+
+    def test_arbitrage_profit_at_custom_threshold(self, sample_market: Market) -> None:
+        """Test profit can be computed against a caller-supplied threshold."""
+        # 0.48 + 0.48 = 0.96, which clears both thresholds
+        assert sample_market.arbitrage_profit_at(Decimal("0.99")) == Decimal("0.04")
+        # Tighter threshold than the spread: no opportunity, no profit
+        assert sample_market.arbitrage_profit_at(Decimal("0.95")) == Decimal("0")
+
+    def test_arbitrage_profit_at_looser_threshold_than_default(self) -> None:
+        """Test a looser threshold reports profit the 0.99 default would suppress."""
+        market = Market(
+            market_id="0xthin",
+            condition_id="0xcond",
+            question="Thin spread market",
+            yes_token=Token(token_id="0xyes", outcome="Yes", price=Decimal("0.50")),
+            no_token=Token(token_id="0xno", outcome="No", price=Decimal("0.495")),
+            volume=Decimal("50000"),
+            liquidity=Decimal("10000"),
+            end_date=datetime.now() + timedelta(days=30),
+            active=True,
+        )
+        # Default computed field uses the 0.99 constant, so it sees no opportunity
+        assert market.is_arbitrage_opportunity is False
+        assert market.arbitrage_profit_per_dollar == Decimal("0")
+        # A looser configured threshold does see one
+        assert market.is_arbitrage_at(Decimal("0.999")) is True
+        assert market.arbitrage_profit_at(Decimal("0.999")) == Decimal("0.005")
 
     def test_is_tradeable_true(self, sample_market: Market) -> None:
         """Test market is tradeable when active, not expired, has arbitrage."""
