@@ -23,6 +23,13 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _ARCHIVE_ROOT = (_REPO_ROOT / "research" / "archive").resolve()
 
 
+class EvidenceManifestError(RuntimeError):
+    """Raised when a freeze manifest exists but cannot be interpreted.
+
+    Distinct from a missing manifest, which simply means there is nothing to discover.
+    """
+
+
 def _canonical_copies() -> set[Path]:
     """Canonical evidence copies named by freeze manifests.
 
@@ -30,21 +37,34 @@ def _canonical_copies() -> set[Path]:
     manifest records where its canonical copy lives, so the protected set is derived
     from the evidence record rather than from a hardcoded guess at the archive layout.
 
-    A manifest that cannot be read contributes nothing; the static roots below still
-    cover the in-repo artifacts, and the canonical copies are additionally made
-    filesystem read-only as defence in depth.
+    Fails closed. A manifest that is present but unreadable, unparseable, or missing
+    ``canonical_copy_path`` means the identity of an evidence asset is unknown, and the
+    correct response is to refuse rather than to quietly protect one fewer path. Silently
+    downgrading a security boundary on malformed input is the failure mode this whole
+    boundary exists to prevent.
+
+    Raises:
+        EvidenceManifestError: If a manifest is present but cannot be interpreted.
     """
     found: set[Path] = set()
     if not _ARCHIVE_ROOT.exists():
         return found
-    for manifest in _ARCHIVE_ROOT.glob("*/manifest.json"):
+    for manifest in sorted(_ARCHIVE_ROOT.glob("*/manifest.json")):
         try:
             recorded = json.loads(manifest.read_text()).get("canonical_copy_path")
-        except (OSError, ValueError):
-            continue
-        if recorded:
-            found.add(Path(recorded).expanduser().resolve())
-            found.add(Path(recorded).expanduser().resolve().parent)
+        except (OSError, ValueError) as exc:
+            raise EvidenceManifestError(
+                f"{manifest} exists but could not be read as a freeze manifest. "
+                "Refusing to initialise storage with an unknown evidence identity."
+            ) from exc
+        if not recorded:
+            raise EvidenceManifestError(
+                f"{manifest} does not record canonical_copy_path. Refusing to "
+                "initialise storage without knowing which asset to protect."
+            )
+        canonical = Path(recorded).expanduser().resolve()
+        found.add(canonical)
+        found.add(canonical.parent)
     return found
 
 

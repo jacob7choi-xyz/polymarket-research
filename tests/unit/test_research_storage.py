@@ -170,6 +170,39 @@ class TestWriterGuard:
         assert canonical.resolve() in storage.PROTECTED_DATASETS
 
 
+class TestManifestDiscoveryFailsClosed:
+    """An uninterpretable freeze manifest must refuse, not silently protect less."""
+
+    def test_malformed_manifest_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unparseable JSON means unknown evidence identity, so refuse."""
+        archive = tmp_path / "archive"
+        (archive / "v9").mkdir(parents=True)
+        (archive / "v9" / "manifest.json").write_text("{ not json")
+        monkeypatch.setattr(storage, "_ARCHIVE_ROOT", archive)
+        with pytest.raises(storage.EvidenceManifestError, match="could not be read"):
+            storage._canonical_copies()
+
+    def test_manifest_without_canonical_path_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A manifest that names no canonical asset cannot be acted on."""
+        archive = tmp_path / "archive"
+        (archive / "v9").mkdir(parents=True)
+        (archive / "v9" / "manifest.json").write_text('{"dataset": "v9"}')
+        monkeypatch.setattr(storage, "_ARCHIVE_ROOT", archive)
+        with pytest.raises(storage.EvidenceManifestError, match="canonical_copy_path"):
+            storage._canonical_copies()
+
+    def test_absent_archive_is_not_an_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No archive means nothing to discover, which is different from malformed."""
+        monkeypatch.setattr(storage, "_ARCHIVE_ROOT", tmp_path / "nonexistent")
+        assert storage._canonical_copies() == set()
+
+
 class TestReadOnlyUriSafety:
     """Filenames containing URI syntax must not be misparsed."""
 

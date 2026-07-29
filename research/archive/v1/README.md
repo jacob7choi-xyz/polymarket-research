@@ -46,6 +46,14 @@ version, not reviving these writers.
 
 Protection covers both the in-repo working copy and the off-repo canonical copy, the
 latter derived from `canonical_copy_path` in the manifest rather than a hardcoded path.
+Dataset versions following this archive/manifest convention are discovered at process
+initialisation; the protected set is computed at import time and does not refresh within
+a running process. A manifest that is present but uninterpretable causes storage
+initialisation to fail rather than protecting one fewer path.
+
+These controls make modification *detectable and inconvenient*, not cryptographically
+impossible. The owner can change permissions; the guarantee is that any change produces
+a hash mismatch against a manifest tracked in git.
 
 ## Why it is frozen rather than repaired
 
