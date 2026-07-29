@@ -132,16 +132,11 @@ class Application:
             position_tracker=self.position_tracker,
         )
 
-        # Layer 2: Resilience
-        self.rate_limiter = RateLimiter(
-            rate=self.settings.rate_limit_requests_per_second,
-            burst=self.settings.rate_limit_burst,
-        )
-
-        self.circuit_breaker = CircuitBreaker(
-            failure_threshold=self.settings.circuit_breaker_failure_threshold,
-            recovery_timeout=self.settings.circuit_breaker_recovery_timeout_seconds,
-        )
+        # Layer 2: Resilience -- owned by the injected client, which applies it to every
+        # request. Read the references rather than constructing parallel instances, so the
+        # breaker reported in metrics is the one actually gating requests.
+        self.rate_limiter = self.api_client.rate_limiter
+        self.circuit_breaker = self.api_client.circuit_breaker
 
         # Layer 3: API Client is injected by the caller (see docstring)
 
@@ -551,9 +546,26 @@ async def async_main() -> None:
     loop = asyncio.get_event_loop()
     setup_signal_handlers(app, loop)
 
+    # Resilience is constructed here and injected into the client, which applies it to
+    # every request rather than relying on each call site to remember.
+    rate_limiter = RateLimiter(
+        rate=settings.rate_limit_requests_per_second,
+        burst=settings.rate_limit_burst,
+    )
+    circuit_breaker = CircuitBreaker(
+        failure_threshold=settings.circuit_breaker_failure_threshold,
+        recovery_timeout=settings.circuit_breaker_recovery_timeout_seconds,
+    )
+
     # Startup
     try:
-        async with PolymarketClient(base_url=str(settings.polymarket_api_url)) as client:
+        async with PolymarketClient(
+            base_url=str(settings.polymarket_api_url),
+            rate_limiter=rate_limiter,
+            circuit_breaker=circuit_breaker,
+            retry_max_attempts=settings.retry_max_attempts,
+            retry_base_delay=settings.retry_base_delay_seconds,
+        ) as client:
             app.api_client = client
             await app.startup()
 

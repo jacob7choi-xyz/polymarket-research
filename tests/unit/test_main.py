@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from polymarket_arbitrage.api.client import PolymarketClient
+from polymarket_arbitrage.api.resilience import CircuitBreaker, RateLimiter
 from polymarket_arbitrage.config.constants import MAX_MARKET_PAGES
 from polymarket_arbitrage.config.settings import Settings
 from polymarket_arbitrage.domain.exceptions import APIError
@@ -111,11 +112,46 @@ class TestApplicationStartup:
 
             assert app.position_tracker is not None
             assert app.paper_trader is not None
-            assert app.rate_limiter is not None
-            assert app.circuit_breaker is not None
             assert app.strategy is not None
             # Trader shares the tracker instance rather than building its own
             assert app.paper_trader.position_tracker is app.position_tracker
+
+    @pytest.mark.asyncio
+    async def test_startup_adopts_the_clients_resilience(
+        self, app: Application, settings: Settings
+    ) -> None:
+        """Test the app reports the same breaker that actually gates requests.
+
+        Regression: startup() used to construct its own RateLimiter and CircuitBreaker
+        while the client applied neither, so the breaker published to metrics could never
+        leave CLOSED no matter how the API behaved.
+        """
+        limiter = RateLimiter(rate=5.0, burst=10)
+        breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=30.0)
+        async with PolymarketClient(
+            base_url=str(settings.polymarket_api_url),
+            rate_limiter=limiter,
+            circuit_breaker=breaker,
+        ) as client:
+            app.api_client = client
+
+            await app.startup()
+
+            assert app.rate_limiter is limiter
+            assert app.circuit_breaker is breaker
+
+    @pytest.mark.asyncio
+    async def test_startup_without_resilience_reports_none(
+        self, app: Application, settings: Settings
+    ) -> None:
+        """Test an unprotected client is reported as unprotected, not faked."""
+        async with PolymarketClient(base_url=str(settings.polymarket_api_url)) as client:
+            app.api_client = client
+
+            await app.startup()
+
+            assert app.rate_limiter is None
+            assert app.circuit_breaker is None
 
     @pytest.mark.asyncio
     async def test_startup_applies_configured_threshold(

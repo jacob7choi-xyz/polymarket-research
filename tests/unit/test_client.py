@@ -8,11 +8,18 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from pytest_httpx import HTTPXMock
 
 from polymarket_arbitrage.api.client import PolymarketClient
+from polymarket_arbitrage.api.resilience import (
+    CircuitBreaker,
+    CircuitBreakerState,
+    RateLimiter,
+)
 from polymarket_arbitrage.api.response_models import MarketResponse
 from polymarket_arbitrage.domain.exceptions import (
     APIError,
+    CircuitBreakerOpenError,
     MarketNotFoundError,
     RateLimitError,
 )
@@ -437,3 +444,57 @@ class TestPolymarketClientHealthCheck:
         )
         result = await poly_client.health_check()
         assert result is False
+
+
+class TestResilienceIsApplied:
+    """The client must apply injected resilience to every request.
+
+    Regression: these primitives were constructed at startup and never invoked, so the
+    application advertised rate limiting, retries and circuit breaking while sending
+    unthrottled, unretried, ungated requests.
+    """
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_is_consumed_per_attempt(self, httpx_mock: HTTPXMock) -> None:
+        """A token is acquired for each HTTP attempt, not once per logical call."""
+        httpx_mock.add_response(json={"ok": True})
+        limiter = RateLimiter(rate=1000.0, burst=5)
+        async with PolymarketClient(rate_limiter=limiter) as client:
+            before = limiter._tokens
+            await client.get_json("/markets")
+            assert limiter._tokens < before
+
+    @pytest.mark.asyncio
+    async def test_transient_failure_is_retried(self, httpx_mock: HTTPXMock) -> None:
+        """A timeout is retried and can then succeed."""
+        httpx_mock.add_exception(httpx.TimeoutException("boom"))
+        httpx_mock.add_response(json={"recovered": True})
+        async with PolymarketClient(retry_max_attempts=3, retry_base_delay=0.01) as client:
+            assert await client.get_json("/markets") == {"recovered": True}
+
+    @pytest.mark.asyncio
+    async def test_client_error_is_not_retried(self, httpx_mock: HTTPXMock) -> None:
+        """A 4xx is an answer, not flakiness; retrying would only mask it."""
+        httpx_mock.add_response(status_code=400, json={"error": "bad request"})
+        async with PolymarketClient(retry_max_attempts=3, retry_base_delay=0.01) as client:
+            with pytest.raises(APIError):
+                await client.get_json("/markets")
+        assert len(httpx_mock.get_requests()) == 1
+
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_opens_and_then_rejects(self, httpx_mock: HTTPXMock) -> None:
+        """Repeated failures trip the breaker, which then fails fast without a request."""
+        breaker = CircuitBreaker(failure_threshold=2, recovery_timeout=60.0)
+        httpx_mock.add_exception(httpx.ConnectError("down"), is_reusable=True)
+        async with PolymarketClient(circuit_breaker=breaker) as client:
+            for _ in range(2):
+                with pytest.raises(DomainConnectionError):
+                    await client.get_json("/markets")
+
+            assert breaker.state is CircuitBreakerState.OPEN
+
+            sent_before = len(httpx_mock.get_requests())
+            with pytest.raises(CircuitBreakerOpenError):
+                await client.get_json("/markets")
+            # Rejected without touching the network
+            assert len(httpx_mock.get_requests()) == sent_before

@@ -27,7 +27,17 @@ from ..domain.exceptions import (
     TimeoutError,
 )
 from ..monitoring.logging import get_logger
+from .resilience import CircuitBreaker, RateLimiter, retry_with_backoff
 from .response_models import ErrorResponse, MarketResponse
+
+# Failures worth another attempt: the upstream may succeed on a retry. Deliberately
+# excludes APIError (a 4xx will fail identically) and MarketNotFoundError (a 404 is an
+# answer, not a fault), so retrying cannot mask a real rejection as flakiness.
+RETRYABLE_ERRORS: tuple[type[Exception], ...] = (
+    TimeoutError,
+    ConnectionError,
+    RateLimitError,
+)
 
 logger = get_logger(__name__)
 
@@ -59,6 +69,10 @@ class PolymarketClient:
         base_url: str = "https://gamma-api.polymarket.com",
         timeout: httpx.Timeout | None = None,
         limits: httpx.Limits | None = None,
+        rate_limiter: RateLimiter | None = None,
+        circuit_breaker: CircuitBreaker | None = None,
+        retry_max_attempts: int = 1,
+        retry_base_delay: float = 1.0,
     ):
         """
         Initialize Polymarket API client.
@@ -67,6 +81,16 @@ class PolymarketClient:
             base_url: API base URL
             timeout: Request timeouts (connect, read, write, pool)
             limits: Connection pool limits
+            rate_limiter: Throttles outbound requests. Omit to send unthrottled.
+            circuit_breaker: Gates requests after repeated failures. Omit to send ungated.
+            retry_max_attempts: Attempts per request. 1 disables retrying.
+            retry_base_delay: Base seconds for exponential backoff between attempts.
+
+        Why inject these rather than apply them at each call site?
+        Protection belongs at the boundary. A caller that forgets to acquire a token or
+        forgets to route through the breaker silently loses the protection, and nothing
+        fails to tell them. Attaching them here means every request is covered, including
+        ones added later.
 
         Interview Point - Timeout Strategy:
         - Connect timeout (5s): Fast failure on network issues
@@ -74,6 +98,10 @@ class PolymarketClient:
         - Why different? Connect fails fast, read allows API processing time
         """
         self.base_url = base_url.rstrip("/")
+        self.rate_limiter = rate_limiter
+        self.circuit_breaker = circuit_breaker
+        self.retry_max_attempts = retry_max_attempts
+        self.retry_base_delay = retry_base_delay
 
         # Default timeout: 5s connect, 30s read
         # Why? Connect failures should fail fast, reads need time for API processing
@@ -182,12 +210,51 @@ class PolymarketClient:
             ConnectionError: Network connectivity issues
             RateLimitError: Rate limit exceeded (429)
 
+        Resilience is applied here, at the boundary. Composition, outermost first:
+
+        1. Circuit breaker -- once open, reject immediately without spending retries
+        2. Retry with backoff -- transient failures only (see RETRYABLE_ERRORS)
+        3. Rate limiter -- a token per HTTP attempt, so retries are throttled too
+
+        The breaker sits outside retry deliberately: a burst of retries against a dead
+        upstream should count as one logical failure, not N, or a single outage would trip
+        the breaker on the first request.
+
         Interview Point - Error Handling Strategy:
         1. Catch httpx exceptions
         2. Translate to domain exceptions
         3. Include context (endpoint, status code)
         4. Log errors for monitoring
         """
+
+        async def attempt() -> dict[str, Any] | list[Any]:
+            if self.rate_limiter is not None:
+                await self.rate_limiter.acquire()
+            return await self._execute(method, path, params, **kwargs)
+
+        async def with_retries() -> dict[str, Any] | list[Any]:
+            if self.retry_max_attempts <= 1:
+                return await attempt()
+            return await retry_with_backoff(
+                attempt,
+                max_attempts=self.retry_max_attempts,
+                base_delay=self.retry_base_delay,
+                exceptions=RETRYABLE_ERRORS,
+            )
+
+        if self.circuit_breaker is None:
+            return await with_retries()
+        guarded = self.circuit_breaker(with_retries)
+        return await guarded()
+
+    async def _execute(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any] | list[Any]:
+        """Perform one HTTP attempt and translate failures to domain exceptions."""
         url = path if path.startswith("http") else urljoin(self.base_url, path)
 
         try:
