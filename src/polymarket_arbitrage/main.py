@@ -369,6 +369,11 @@ class Application:
         try:
             logger.info("detection_cycle_started")
 
+            # Settle first, so capital returned by resolved positions is available to
+            # this cycle's trades rather than idling until the next one
+            if self.paper_trader:
+                self.paper_trader.settle_resolved_positions()
+
             # Fetch markets
             markets = await self._fetch_markets()
             logger.info("markets_fetched", count=len(markets))

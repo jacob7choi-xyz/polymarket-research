@@ -36,10 +36,11 @@ class Position:
     """
 
     market_id: str
-    position_size: Decimal  # USD invested
+    position_size: Decimal  # Bundles held; one bundle pays $1 at resolution
     yes_price: Decimal  # Price paid for YES token
     no_price: Decimal  # Price paid for NO token
     entry_time: datetime
+    resolves_at: datetime | None = None  # Market end date, if known
     total_cost: Decimal = field(init=False)
 
     def __post_init__(self) -> None:
@@ -72,11 +73,33 @@ class Position:
         return self.position_size - self.total_cost
 
     @property
+    def payout(self) -> Decimal:
+        """Cash received at resolution.
+
+        One bundle of YES + NO pays exactly $1 whichever side wins, so the payout is
+        known at entry and does not depend on the outcome. This is what makes settlement
+        deterministic for arbitrage positions.
+        """
+        return self.position_size
+
+    @property
     def roi_percent(self) -> Decimal:
-        """Return on investment as percentage."""
+        """Return on capital actually deployed, as a percentage."""
         if self.total_cost == 0:
             return Decimal("0")
         return (self.expected_profit / self.total_cost) * Decimal("100")
+
+    def is_resolved(self, now: datetime | None = None) -> bool:
+        """Whether the market has passed its end date.
+
+        Reads the current time in whichever form ``resolves_at`` uses. Gamma returns end
+        dates with a 'Z' suffix, so they are timezone-aware, while hand-built positions
+        are typically naive; comparing across the two raises TypeError.
+        """
+        if self.resolves_at is None:
+            return False
+        reference = now if now is not None else datetime.now(self.resolves_at.tzinfo)
+        return self.resolves_at < reference
 
 
 class PositionTracker:
@@ -105,17 +128,30 @@ class PositionTracker:
         yes_price: Decimal,
         no_price: Decimal,
         entry_time: datetime | None = None,
+        resolves_at: datetime | None = None,
     ) -> None:
         """
         Add new position.
 
         Args:
             market_id: Unique market identifier
-            position_size: Position size in USD
+            position_size: Bundles held; each pays $1 at resolution
             yes_price: Price paid for YES token
             no_price: Price paid for NO token
             entry_time: When position was opened (defaults to now)
+            resolves_at: Market end date, required for the position to ever settle
+
+        Raises:
+            ValueError: If a position is already open for this market. Overwriting would
+                drop the earlier position's cost basis without ever realizing it, leaving
+                deployed capital unaccounted for.
         """
+        if market_id in self.positions:
+            raise ValueError(
+                f"Position already open for market {market_id}. Close it before "
+                "opening another, or the first position's cost basis is lost."
+            )
+
         entry_time = entry_time or datetime.now()
 
         position = Position(
@@ -124,6 +160,7 @@ class PositionTracker:
             yes_price=yes_price,
             no_price=no_price,
             entry_time=entry_time,
+            resolves_at=resolves_at,
         )
 
         self.positions[market_id] = position
@@ -179,6 +216,14 @@ class PositionTracker:
     def get_position(self, market_id: str) -> Position | None:
         """Get position by market ID."""
         return self.positions.get(market_id)
+
+    def get_resolved_positions(self, now: datetime | None = None) -> list[Position]:
+        """Open positions whose markets have passed their end date.
+
+        Returned as a list rather than a generator so callers can settle while iterating
+        without mutating the dict during traversal.
+        """
+        return [p for p in self.positions.values() if p.is_resolved(now)]
 
     def get_open_positions(self) -> list[Position]:
         """Get all open positions."""

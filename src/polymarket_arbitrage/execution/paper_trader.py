@@ -145,6 +145,7 @@ class PaperTrader:
             yes_price=market.yes_token.price,
             no_price=market.no_token.price,
             entry_time=opportunity.detected_at,
+            resolves_at=market.end_date,
         )
 
         # Log execution
@@ -174,6 +175,47 @@ class PaperTrader:
 
         return True
 
+    def settle_resolved_positions(self, now: datetime | None = None) -> int:
+        """Settle positions whose markets have resolved, returning capital and P&L.
+
+        Settlement is deterministic for arbitrage. A bundle of YES + NO pays exactly $1
+        whichever side wins, so the payout is known at entry and no outcome data is
+        needed -- which is precisely the property that makes the position risk-free.
+
+        Without this the trader only simulates entry: capital falls monotonically,
+        positions never close, and realized P&L stays at zero forever no matter how many
+        profitable trades are taken.
+
+        Args:
+            now: Reference time, defaulting to each position's own timezone-aware now.
+
+        Returns:
+            Number of positions settled.
+        """
+        resolved = self.position_tracker.get_resolved_positions(now)
+        for position in resolved:
+            payout = position.payout
+            realized_pnl = payout - position.total_cost
+            self.available_capital += payout
+            self.position_tracker.close_position(position.market_id, realized_pnl)
+            logger.info(
+                "position_settled",
+                market_id=position.market_id,
+                payout=float(payout),
+                cost_basis=float(position.total_cost),
+                realized_pnl=float(realized_pnl),
+                available_capital=float(self.available_capital),
+            )
+
+        if resolved:
+            logger.info(
+                "settlement_cycle_complete",
+                positions_settled=len(resolved),
+                total_realized_pnl=float(self.position_tracker.total_realized_pnl),
+                available_capital=float(self.available_capital),
+            )
+        return len(resolved)
+
     def get_performance_summary(self) -> dict[str, float]:
         """
         Get performance metrics for analysis.
@@ -197,7 +239,15 @@ class PaperTrader:
         """
         position_summary = self.position_tracker.get_summary()
 
-        capital_deployed = self.initial_capital - self.available_capital
+        # Sum the open cost bases rather than subtracting available from initial. The
+        # subtraction only agrees while realized P&L is zero: once a position settles at a
+        # profit, available capital exceeds initial minus deployed, and the difference is
+        # gains rather than deployment. That error was unreachable before settlement
+        # existed, because realized P&L was permanently zero.
+        capital_deployed = sum(
+            (p.total_cost for p in self.position_tracker.get_open_positions()),
+            Decimal("0"),
+        )
         total_pnl = Decimal(str(position_summary["total_pnl"]))
         roi_percent = (
             (total_pnl / self.initial_capital * 100) if self.initial_capital > 0 else Decimal("0")
