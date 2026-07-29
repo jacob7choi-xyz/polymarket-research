@@ -10,24 +10,53 @@ Both compare fully resolved paths so a symlink or an alternate spelling cannot r
 writer at frozen evidence.
 """
 
+import json
 import os
 from pathlib import Path
 import sqlite3
 from typing import Any
+from urllib.parse import quote
 
 DB_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "markets.db"))
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_ARCHIVE_ROOT = (_REPO_ROOT / "research" / "archive").resolve()
+
+
+def _canonical_copies() -> set[Path]:
+    """Canonical evidence copies named by freeze manifests.
+
+    Protection must attach to the asset, not only to its in-repo working copy. Each
+    manifest records where its canonical copy lives, so the protected set is derived
+    from the evidence record rather than from a hardcoded guess at the archive layout.
+
+    A manifest that cannot be read contributes nothing; the static roots below still
+    cover the in-repo artifacts, and the canonical copies are additionally made
+    filesystem read-only as defence in depth.
+    """
+    found: set[Path] = set()
+    if not _ARCHIVE_ROOT.exists():
+        return found
+    for manifest in _ARCHIVE_ROOT.glob("*/manifest.json"):
+        try:
+            recorded = json.loads(manifest.read_text()).get("canonical_copy_path")
+        except (OSError, ValueError):
+            continue
+        if recorded:
+            found.add(Path(recorded).expanduser().resolve())
+            found.add(Path(recorded).expanduser().resolve().parent)
+    return found
+
 
 # Datasets that must never be written again. The v1 database stays at its original path
 # so existing analysis keeps reading it; only its write capability is revoked.
-PROTECTED_DATASETS: frozenset[Path] = frozenset(
-    {
-        Path(DB_PATH).resolve(),
-    }
-)
-# Anything under the archive root is frozen evidence by definition.
-PROTECTED_ROOTS: frozenset[Path] = frozenset({(_REPO_ROOT / "research" / "archive").resolve()})
+PROTECTED_DATASETS: frozenset[Path] = frozenset({Path(DB_PATH).resolve()} | _canonical_copies())
+
+# research/archive/ is, by architectural convention, permanent immutable evidence: every
+# path beneath it is frozen. Staging or scratch space for a new dataset version belongs
+# outside this root, not under it. Narrowing this to specific files would invite exactly
+# the "just put the mutable copy in archive/" workaround that erodes the invariant.
+PROTECTED_ROOTS: frozenset[Path] = frozenset({_ARCHIVE_ROOT} | _canonical_copies())
 
 
 class FrozenDatasetError(RuntimeError):
@@ -83,7 +112,10 @@ def open_readonly(path: str | Path = DB_PATH) -> sqlite3.Connection:
             f"No database at {target}. Refusing to create one: a read path must not "
             "turn missing evidence into an empty dataset."
         )
-    conn = sqlite3.connect(f"file:{target.resolve().as_posix()}?mode=ro", uri=True)
+    # Percent-encode the path: '?', '#' and '%' are URI syntax, so an unescaped
+    # filename containing them would be parsed as query/fragment rather than as a name
+    quoted = quote(target.resolve().as_posix(), safe="/")
+    conn = sqlite3.connect(f"file:{quoted}?mode=ro", uri=True)
     conn.execute("PRAGMA query_only = ON")
     return conn
 

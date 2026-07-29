@@ -128,13 +128,63 @@ class TestWriterGuard:
         """The guard must not block legitimate new datasets."""
         storage.assert_writable(tmp_path / "future_v2.db")
 
-    def test_no_force_override_exists(self) -> None:
-        """There must be no escape hatch on the guard.
+    def test_policy_lock_no_override_parameter(self) -> None:
+        """POLICY LOCK: the guard must expose no override parameter.
 
-        An override would only ever be used by accident, since no normal workflow
-        modifies frozen evidence.
+        This asserts shape rather than behaviour deliberately. Adding a parameter such
+        as force= or allow_frozen= would weaken a security invariant without failing any
+        behavioural test, so changing this signature should require conscious review
+        rather than passing silently.
         """
         import inspect
 
         params = inspect.signature(storage.assert_writable).parameters
         assert set(params) == {"path"}
+
+    def test_canonical_evidence_copy_is_protected(self) -> None:
+        """The off-repo canonical copy must be protected, not just the working copy.
+
+        Regression: protection originally attached only to the in-repo path, so
+        get_connection() would happily open the canonical evidence archive writable --
+        the artifact with the least redundancy got the least protection.
+        """
+        manifest = Path("research/archive/v1/manifest.json")
+        if not manifest.exists():
+            pytest.skip("v1 manifest not present")
+        import json
+
+        canonical = Path(json.loads(manifest.read_text())["canonical_copy_path"]).expanduser()
+        with pytest.raises(storage.FrozenDatasetError):
+            storage.assert_writable(canonical)
+        with pytest.raises(storage.FrozenDatasetError):
+            storage.assert_writable(canonical.parent / "schema.sql")
+
+    def test_protected_set_derives_from_manifest(self) -> None:
+        """Protection is driven by the evidence record, not a hardcoded layout guess."""
+        manifest = Path("research/archive/v1/manifest.json")
+        if not manifest.exists():
+            pytest.skip("v1 manifest not present")
+        import json
+
+        canonical = Path(json.loads(manifest.read_text())["canonical_copy_path"]).expanduser()
+        assert canonical.resolve() in storage.PROTECTED_DATASETS
+
+
+class TestReadOnlyUriSafety:
+    """Filenames containing URI syntax must not be misparsed."""
+
+    @pytest.mark.parametrize("name", ["plain.db", "we%ird.db", "quer?y.db", "frag#ment.db"])
+    def test_adversarial_filenames_open_correctly(self, tmp_path: Path, name: str) -> None:
+        """'?', '#' and '%' are URI syntax; unescaped they would truncate the path."""
+        path = tmp_path / name
+        conn = sqlite3.connect(str(path))
+        conn.execute("CREATE TABLE t (x INTEGER)")
+        conn.execute("INSERT INTO t VALUES (1)")
+        conn.commit()
+        conn.close()
+
+        ro = storage.open_readonly(path)
+        try:
+            assert ro.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 1
+        finally:
+            ro.close()

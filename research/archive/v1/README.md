@@ -19,6 +19,34 @@ The manifest's `analysis_output_sha256` covers an explicitly enumerated list of
 artifacts (`ROADMAP.md` and the three calibration plots). It is not an exhaustive crawl
 of every file the analysis ever produced.
 
+## Retired entry points
+
+These commands previously wrote to this dataset and now raise `FrozenDatasetError` by
+design. They are retired against v1, not broken:
+
+| Command | What it used to do |
+|---|---|
+| `python -m research.pipeline.fetch_markets` | Wrote market metadata; its `INSERT OR REPLACE` omitted the derived price columns, so a refresh erased CLOB enrichment |
+| `python -m research.pipeline.fetch_prices` | Wrote price history and set `price_history_fetched` |
+| `python -m research.analysis.infer_categories` | Wrote inferred `category` values |
+| `python -m research.analysis.extract_preresolution_prices` | Wrote the `price_*_before` snapshot columns |
+
+Read-only analysis (`calibration`, `validate_crypto_signal`, `backtest_politics`) still
+runs against this dataset unchanged. Collecting again means creating a new dataset
+version, not reviving these writers.
+
+## Protection layers
+
+| Layer | Control |
+|---|---|
+| Application | `get_connection()` raises `FrozenDatasetError` for protected paths, resolved so symlinks and relative spellings cannot bypass it. No override parameter exists |
+| Connection | `open_readonly()` uses `mode=ro` plus `PRAGMA query_only`, runs no migrations, and refuses a missing file rather than creating an empty one |
+| Filesystem | Working copy and canonical package are `chmod -w` |
+| Detectability | Content hashes in `manifest.json`; any modification produces a mismatch |
+
+Protection covers both the in-repo working copy and the off-repo canonical copy, the
+latter derived from `canonical_copy_path` in the manifest rather than a hardcoded path.
+
 ## Why it is frozen rather than repaired
 
 Several defects in this dataset are structural rather than incidental: they are baked
