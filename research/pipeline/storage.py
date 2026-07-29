@@ -1,10 +1,97 @@
-"""SQLite storage interface for research data."""
+"""SQLite storage interface for research data.
+
+The v1 dataset is frozen evidence (see research/archive/v1/). Two capability boundaries
+enforce that:
+
+- ``open_readonly`` opens a connection that cannot write and never runs migrations
+- ``get_connection``, the writable path, refuses any protected dataset
+
+Both compare fully resolved paths so a symlink or an alternate spelling cannot route a
+writer at frozen evidence.
+"""
 
 import os
+from pathlib import Path
 import sqlite3
 from typing import Any
 
 DB_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "markets.db"))
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Datasets that must never be written again. The v1 database stays at its original path
+# so existing analysis keeps reading it; only its write capability is revoked.
+PROTECTED_DATASETS: frozenset[Path] = frozenset(
+    {
+        Path(DB_PATH).resolve(),
+    }
+)
+# Anything under the archive root is frozen evidence by definition.
+PROTECTED_ROOTS: frozenset[Path] = frozenset({(_REPO_ROOT / "research" / "archive").resolve()})
+
+
+class FrozenDatasetError(RuntimeError):
+    """Raised when a write path targets a frozen dataset.
+
+    A distinct type rather than a bare RuntimeError: this is a domain invariant, and a
+    future failure here should be unmistakable rather than blending into ordinary errors.
+    """
+
+
+def _is_protected(path: Path) -> bool:
+    """True if the resolved path is frozen evidence.
+
+    Resolution matters: a symlink, a relative spelling, or a path through ``..`` must not
+    be able to present frozen evidence as a fresh target.
+    """
+    resolved = path.resolve()
+    if resolved in PROTECTED_DATASETS:
+        return True
+    return any(root == resolved or root in resolved.parents for root in PROTECTED_ROOTS)
+
+
+def assert_writable(path: str | Path) -> None:
+    """Refuse to hand out write access to a frozen dataset.
+
+    There is deliberately no override parameter. No normal workflow modifies frozen
+    evidence, so an escape hatch would only ever be used by accident.
+    """
+    target = Path(path)
+    if _is_protected(target):
+        raise FrozenDatasetError(
+            f"{target} is a frozen dataset and cannot be opened for writing. "
+            "Frozen evidence is read-only; collect into a new dataset version instead."
+        )
+
+
+def open_readonly(path: str | Path = DB_PATH) -> sqlite3.Connection:
+    """Open a dataset for querying only.
+
+    Three properties, each of which the previous single accessor violated:
+
+    - ``mode=ro`` so SQLite never opens the file writable
+    - ``query_only=ON`` so the connection rejects writes even if opened otherwise
+    - no schema migration; a read must not mutate what it reads
+
+    Raises:
+        FileNotFoundError: If the database does not exist. A missing evidence store must
+            never be silently replaced by a newly created empty one.
+    """
+    target = Path(path)
+    if not target.exists():
+        raise FileNotFoundError(
+            f"No database at {target}. Refusing to create one: a read path must not "
+            "turn missing evidence into an empty dataset."
+        )
+    conn = sqlite3.connect(f"file:{target.resolve().as_posix()}?mode=ro", uri=True)
+    conn.execute("PRAGMA query_only = ON")
+    return conn
+
+
+def open_v1_readonly() -> sqlite3.Connection:
+    """Open the frozen v1 research dataset for forensic querying."""
+    return open_readonly(DB_PATH)
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS markets (
@@ -45,10 +132,16 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE markets ADD COLUMN {col} REAL")
 
 
-def get_connection() -> sqlite3.Connection:
-    """Open (or create) the SQLite database and ensure schema exists."""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+def get_connection(db_path: str | Path = DB_PATH) -> sqlite3.Connection:
+    """Open (or create) a writable database and ensure schema exists.
+
+    Raises:
+        FrozenDatasetError: If the target is a frozen dataset.
+    """
+    assert_writable(db_path)
+    target = Path(db_path)
+    os.makedirs(target.parent, exist_ok=True)
+    conn = sqlite3.connect(str(target))
     conn.executescript(_SCHEMA)
     _ensure_columns(conn)
     return conn

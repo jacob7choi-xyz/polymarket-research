@@ -11,11 +11,10 @@ Run from project root:
 """
 
 from dataclasses import dataclass
-import sqlite3
 
 import numpy as np
 
-from research.pipeline.storage import DB_PATH
+from research.pipeline.storage import DB_PATH, open_readonly
 
 RNG = np.random.default_rng(42)
 
@@ -48,7 +47,7 @@ class CalibrationBin:
 
 def load_crypto_markets(db_path: str) -> list[MarketRow]:
     """Load crypto markets with 24h-before prices in the uncertain range."""
-    conn = sqlite3.connect(db_path)
+    conn = open_readonly(db_path)
     rows = conn.execute(
         """
         SELECT price_24h_before, resolved_yes, volume_usd, closed_at
@@ -66,7 +65,7 @@ def load_crypto_markets(db_path: str) -> list[MarketRow]:
 
 def load_all_categories(db_path: str) -> dict[str, list[MarketRow]]:
     """Load all categories for comparison."""
-    conn = sqlite3.connect(db_path)
+    conn = open_readonly(db_path)
     rows = conn.execute(
         """
         SELECT category, price_24h_before, resolved_yes, volume_usd, closed_at

@@ -9,11 +9,10 @@ Run from project root:
 """
 
 from dataclasses import dataclass, field
-import sqlite3
 
 import numpy as np
 
-from research.pipeline.storage import DB_PATH
+from research.pipeline.storage import DB_PATH, open_readonly
 
 RNG = np.random.default_rng(42)
 
@@ -41,7 +40,7 @@ def load_politics_trades(
     price_hi: float = 0.80,
 ) -> list[Trade]:
     """Load political markets eligible for the strategy."""
-    conn = sqlite3.connect(db_path)
+    conn = open_readonly(db_path)
     rows = conn.execute(
         """
         SELECT market_id, question, price_24h_before, resolved_yes,
