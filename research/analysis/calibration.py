@@ -1,16 +1,15 @@
 """Calibration analysis: predicted probability vs. actual resolution rate."""
 
 import os
-import sqlite3
 
 import matplotlib.pyplot as plt
 
-from research.pipeline.storage import DB_PATH
+from research.pipeline.storage import DB_PATH, open_readonly
 
 
 def load_resolved_markets(db_path: str) -> list[tuple[float, int]]:
     """Return (final_yes_price, resolved_yes) for all resolved markets."""
-    conn = sqlite3.connect(db_path)
+    conn = open_readonly(db_path)
     rows = conn.execute(
         """
         SELECT final_yes_price, resolved_yes
@@ -112,7 +111,7 @@ def load_preresolution_markets(
 
     Only includes markets where the price at that horizon is between 0.05 and 0.95.
     """
-    conn = sqlite3.connect(db_path)
+    conn = open_readonly(db_path)
     horizons = {
         "24h before": "price_24h_before",
         "6h before": "price_6h_before",
@@ -192,7 +191,7 @@ def save_preresolution_calibration_plot(
 
 def save_category_calibration_plot(db_path: str, output_path: str) -> None:
     """Save a calibration plot with a separate curve per category (min 50 markets)."""
-    conn = sqlite3.connect(db_path)
+    conn = open_readonly(db_path)
     rows = conn.execute(
         """
         SELECT category, price_24h_before, resolved_yes

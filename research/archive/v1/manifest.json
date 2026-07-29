@@ -1,0 +1,30 @@
+{
+  "analysis_output_sha256": {
+    "research/ROADMAP.md": "98ac35f4579788d2e0da5cb28719d534d135cf9b349ba401444358bd64cdf548",
+    "research/analysis/calibration_curve.png": "186c7822e7191532047f41ac11a232a15812d9c1940bdb7afd53955d173707fc",
+    "research/analysis/calibration_curve_by_category.png": "ffd8acf93d21789c3561f49e9d5d4fdb87251cd120adf60b547202f6220dfc3a",
+    "research/analysis/calibration_curve_preresolution.png": "8dd196f3f17fe21e96018305776e645f9ff6d31869abcafed754140e0d799960"
+  },
+  "canonical_copy_path": "/Users/choija/polymarket-research-archive/v1/markets.db",
+  "database": {
+    "integrity_check": "ok",
+    "schema_sha256": "ea7c088c3d82245d18168721b6467ec04b901a06828fa3e15e126f314c99debf",
+    "sha256": "168749f70083d6ec0391606e6f63a4f54f135e807dec89c3005f5e9641852f35",
+    "size_bytes": 115777536,
+    "table_row_counts": {
+      "markets": 9922,
+      "price_history": 2091101
+    }
+  },
+  "dataset": "research-v1-exploratory",
+  "frozen_at_utc": "2026-07-29T22:19:28.164289+00:00",
+  "git_commit": "170902c04a40e5ecf9cd90cdca0619a29b35ac04",
+  "runtime": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "python_version": "3.11.14",
+    "sqlite_version": "3.51.1",
+    "uv_lock_sha256": "ab67e1eb7810cd2a48d73845873800f5d951f5a91acf71bcf04762dbcf4f6771"
+  },
+  "source_path": "research/data/markets.db",
+  "status": "FROZEN"
+}
