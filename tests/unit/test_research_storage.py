@@ -200,7 +200,55 @@ class TestManifestDiscoveryFailsClosed:
     ) -> None:
         """No archive means nothing to discover, which is different from malformed."""
         monkeypatch.setattr(storage, "_ARCHIVE_ROOT", tmp_path / "nonexistent")
-        assert storage._canonical_copies() == set()
+        assert storage._canonical_copies() == (set(), set())
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "[]",
+            "42",
+            '"a string"',
+            '{"canonical_copy_path": 123}',
+            '{"canonical_copy_path": "   "}',
+            '{"canonical_copy_path": "relative/markets.db"}',
+            '{"canonical_copy_path": "/markets.db"}',
+        ],
+    )
+    def test_uninterpretable_manifests_raise_the_typed_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str
+    ) -> None:
+        """Parsing successfully is not the same as being interpretable.
+
+        Each of these previously escaped the typed contract, as AttributeError,
+        TypeError, or by silently succeeding. The relative case resolved against the
+        process working directory, so one manifest protected different assets depending
+        on where it ran. The filesystem-root case put '/' into PROTECTED_ROOTS, which
+        would have made every path on the machine unwritable through this module.
+        """
+        archive = tmp_path / "archive"
+        (archive / "v9").mkdir(parents=True)
+        (archive / "v9" / "manifest.json").write_text(body)
+        monkeypatch.setattr(storage, "_ARCHIVE_ROOT", archive)
+        with pytest.raises(storage.EvidenceManifestError):
+            storage._canonical_copies()
+
+    def test_wellformed_manifest_separates_dataset_from_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A valid manifest protects the file and its directory as distinct sets."""
+        archive = tmp_path / "archive"
+        (archive / "v9").mkdir(parents=True)
+        canonical = tmp_path / "external" / "v9" / "markets.db"
+        canonical.parent.mkdir(parents=True)
+        canonical.write_bytes(b"")
+        (archive / "v9" / "manifest.json").write_text(f'{{"canonical_copy_path": "{canonical}"}}')
+        monkeypatch.setattr(storage, "_ARCHIVE_ROOT", archive)
+
+        datasets, roots = storage._canonical_copies()
+
+        assert datasets == {canonical.resolve()}
+        assert roots == {canonical.parent.resolve()}
+        assert canonical.resolve() not in roots
 
 
 class TestReadOnlyUriSafety:

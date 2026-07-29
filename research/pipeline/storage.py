@@ -30,53 +30,92 @@ class EvidenceManifestError(RuntimeError):
     """
 
 
-def _canonical_copies() -> set[Path]:
-    """Canonical evidence copies named by freeze manifests.
+def _canonical_path_from_manifest(manifest: Path) -> Path:
+    """Read and fully validate the canonical evidence path a manifest declares.
 
-    Protection must attach to the asset, not only to its in-repo working copy. Each
-    manifest records where its canonical copy lives, so the protected set is derived
-    from the evidence record rather than from a hardcoded guess at the archive layout.
+    Every failure mode raises ``EvidenceManifestError``. Parsing successfully is not the
+    same as being interpretable: valid JSON that is a list, a scalar, or an object whose
+    ``canonical_copy_path`` is not a usable absolute path all mean the identity of an
+    evidence asset is unknown, which must refuse rather than protect fewer paths.
 
-    Fails closed. A manifest that is present but unreadable, unparseable, or missing
-    ``canonical_copy_path`` means the identity of an evidence asset is unknown, and the
-    correct response is to refuse rather than to quietly protect one fewer path. Silently
-    downgrading a security boundary on malformed input is the failure mode this whole
-    boundary exists to prevent.
+    Two validations exist for reasons beyond type hygiene:
+
+    - a relative path would resolve against the process working directory, so the same
+      manifest would protect different assets depending on where it ran
+    - a path directly beneath the filesystem root would put ``/`` into the protected
+      roots and make every path on the machine unwritable through this module
 
     Raises:
-        EvidenceManifestError: If a manifest is present but cannot be interpreted.
+        EvidenceManifestError: On any unreadable, unparseable, or unusable manifest.
     """
-    found: set[Path] = set()
+
+    def refuse(reason: str) -> EvidenceManifestError:
+        return EvidenceManifestError(
+            f"{manifest}: {reason}. Refusing to initialise storage with an unknown "
+            "evidence identity."
+        )
+
+    try:
+        payload = json.loads(manifest.read_text())
+    except (OSError, ValueError) as exc:
+        raise refuse("could not be read or parsed as a freeze manifest") from exc
+
+    if not isinstance(payload, dict):
+        raise refuse(f"parsed as {type(payload).__name__}, not a JSON object")
+
+    recorded = payload.get("canonical_copy_path")
+    if not isinstance(recorded, str) or not recorded.strip():
+        raise refuse("canonical_copy_path is missing or not a non-empty string")
+
+    canonical = Path(recorded).expanduser()
+    if not canonical.is_absolute():
+        raise refuse(f"canonical_copy_path {recorded!r} is not absolute")
+
+    canonical = canonical.resolve()
+    # anchor is a str while parent is a Path, so compare like with like
+    if canonical.parent == Path(canonical.anchor):
+        raise refuse(
+            f"canonical_copy_path {recorded!r} sits directly beneath the filesystem "
+            "root, which would protect every path on the machine"
+        )
+    return canonical
+
+
+def _canonical_copies() -> tuple[set[Path], set[Path]]:
+    """Canonical evidence assets and their containing directories.
+
+    Protection must attach to the asset, not only to its in-repo working copy. Each
+    manifest records where its canonical copy lives, so the protected set derives from
+    the evidence record rather than from a hardcoded guess at the archive layout.
+
+    Returns:
+        (datasets, roots) -- the canonical database files, and the directories holding
+        them. Kept separate so each protected set means what its name says.
+    """
+    datasets: set[Path] = set()
+    roots: set[Path] = set()
     if not _ARCHIVE_ROOT.exists():
-        return found
+        return datasets, roots
     for manifest in sorted(_ARCHIVE_ROOT.glob("*/manifest.json")):
-        try:
-            recorded = json.loads(manifest.read_text()).get("canonical_copy_path")
-        except (OSError, ValueError) as exc:
-            raise EvidenceManifestError(
-                f"{manifest} exists but could not be read as a freeze manifest. "
-                "Refusing to initialise storage with an unknown evidence identity."
-            ) from exc
-        if not recorded:
-            raise EvidenceManifestError(
-                f"{manifest} does not record canonical_copy_path. Refusing to "
-                "initialise storage without knowing which asset to protect."
-            )
-        canonical = Path(recorded).expanduser().resolve()
-        found.add(canonical)
-        found.add(canonical.parent)
-    return found
+        canonical = _canonical_path_from_manifest(manifest)
+        datasets.add(canonical)
+        roots.add(canonical.parent)
+    return datasets, roots
 
 
-# Datasets that must never be written again. The v1 database stays at its original path
-# so existing analysis keeps reading it; only its write capability is revoked.
-PROTECTED_DATASETS: frozenset[Path] = frozenset({Path(DB_PATH).resolve()} | _canonical_copies())
+_CANONICAL_DATASETS, _CANONICAL_ROOTS = _canonical_copies()
 
-# research/archive/ is, by architectural convention, permanent immutable evidence: every
-# path beneath it is frozen. Staging or scratch space for a new dataset version belongs
-# outside this root, not under it. Narrowing this to specific files would invite exactly
-# the "just put the mutable copy in archive/" workaround that erodes the invariant.
-PROTECTED_ROOTS: frozenset[Path] = frozenset({_ARCHIVE_ROOT} | _canonical_copies())
+# Individual database files that must never be written again. The v1 database stays at
+# its original path so existing analysis keeps reading it; only write capability is
+# revoked.
+PROTECTED_DATASETS: frozenset[Path] = frozenset({Path(DB_PATH).resolve()} | _CANONICAL_DATASETS)
+
+# Directory trees that are frozen in their entirety. research/archive/ is, by
+# architectural convention, permanent immutable evidence: every path beneath it is
+# frozen. Staging or scratch space for a new dataset version belongs outside this root,
+# not under it. Narrowing this to specific files would invite exactly the "just put the
+# mutable copy in archive/" workaround that erodes the invariant.
+PROTECTED_ROOTS: frozenset[Path] = frozenset({_ARCHIVE_ROOT} | _CANONICAL_ROOTS)
 
 
 class FrozenDatasetError(RuntimeError):
