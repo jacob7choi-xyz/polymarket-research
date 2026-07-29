@@ -89,14 +89,17 @@ class CircuitBreaker:
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
-        expected_exception: type[Exception] = Exception,
+        expected_exception: type[Exception] | tuple[type[Exception], ...] = Exception,
         half_open_max_calls: int = 1,
     ):
         """
         Args:
             failure_threshold: Number of failures before opening circuit
             recovery_timeout: Seconds to wait before testing recovery (OPEN → HALF_OPEN)
-            expected_exception: Which exceptions count as failures
+            expected_exception: Which exceptions count as failures. Pass a curated
+                tuple of dependency-health faults; counting every exception lets a
+                deterministic client error (a 400, a 422) be misread as the upstream
+                being unhealthy
             half_open_max_calls: Max concurrent calls allowed in HALF_OPEN state
 
         Interview Point - Tuning Parameters:

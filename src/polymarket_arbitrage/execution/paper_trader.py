@@ -15,10 +15,11 @@ Interview Point - Staged Rollout:
 - Fail fast without big losses
 """
 
+from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 
-from ..domain.models import ArbitrageOpportunity
+from ..domain.models import ArbitrageOpportunity, ResolutionStatus
 from ..monitoring.logging import get_logger
 from .position_tracker import PositionTracker
 
@@ -141,11 +142,11 @@ class PaperTrader:
         # Record position
         self.position_tracker.add_position(
             market_id=market.market_id,
-            position_size=position_size,
+            bundle_quantity=position_size,
             yes_price=market.yes_token.price,
             no_price=market.no_token.price,
             entry_time=opportunity.detected_at,
-            resolves_at=market.end_date,
+            market_end_at=market.end_date,
         )
 
         # Log execution
@@ -175,46 +176,83 @@ class PaperTrader:
 
         return True
 
-    def settle_resolved_positions(self, now: datetime | None = None) -> int:
-        """Settle positions whose markets have resolved, returning capital and P&L.
+    def settle_position(self, market_id: str, status: ResolutionStatus) -> bool:
+        """Settle one position, but only on evidence that its market actually resolved.
 
-        Settlement is deterministic for arbitrage. A bundle of YES + NO pays exactly $1
-        whichever side wins, so the payout is known at entry and no outcome data is
-        needed -- which is precisely the property that makes the position risk-free.
+        Settlement requires ``ResolutionStatus.RESOLVED`` and nothing weaker. A market's
+        end date will not do: measured against the live API, 100% of markets close
+        *after* their end date, median 0.8 hours later and up to 11.7 hours in a
+        32-market sample. Settling on the end date would credit capital and realize P&L
+        while the position was still unredeemable, manufacturing capital the portfolio
+        does not have and inflating capacity for subsequent trades.
 
-        Without this the trader only simulates entry: capital falls monotonically,
-        positions never close, and realized P&L stays at zero forever no matter how many
-        profitable trades are taken.
+        The bundle *amount* needs no outcome data -- YES + NO redeems for $1 either way.
+        The *timing* is what needs evidence, and this method refuses to guess it. An
+        UNRESOLVED or UNKNOWN status leaves the position open.
+
+        Obtaining the status is the caller's job. This module has no API dependency, and
+        inventing an oracle here would put the same unverified assumption back one layer
+        down.
 
         Args:
-            now: Reference time, defaulting to each position's own timezone-aware now.
+            market_id: Market whose position should settle.
+            status: Authoritative resolution status for that market.
+
+        Returns:
+            True if the position settled, False if it was left open or does not exist.
+        """
+        if status is not ResolutionStatus.RESOLVED:
+            logger.debug(
+                "settlement_skipped",
+                market_id=market_id,
+                status=str(status),
+                reason="market not confirmed resolved",
+            )
+            return False
+
+        position = self.position_tracker.get_position(market_id)
+        if position is None:
+            logger.warning("settlement_no_position", market_id=market_id)
+            return False
+
+        payout = position.payout
+        realized_pnl = payout - position.total_cost
+        self.available_capital += payout
+        self.position_tracker.close_position(market_id, realized_pnl)
+        logger.info(
+            "position_settled",
+            market_id=market_id,
+            payout=float(payout),
+            cost_basis=float(position.total_cost),
+            realized_pnl=float(realized_pnl),
+            available_capital=float(self.available_capital),
+        )
+        return True
+
+    def settle_positions(self, statuses: Mapping[str, ResolutionStatus]) -> int:
+        """Settle every position whose market is confirmed resolved.
+
+        Args:
+            statuses: Resolution status per market id. Markets absent from the mapping
+                are treated as UNKNOWN and left open.
 
         Returns:
             Number of positions settled.
         """
-        resolved = self.position_tracker.get_resolved_positions(now)
-        for position in resolved:
-            payout = position.payout
-            realized_pnl = payout - position.total_cost
-            self.available_capital += payout
-            self.position_tracker.close_position(position.market_id, realized_pnl)
-            logger.info(
-                "position_settled",
-                market_id=position.market_id,
-                payout=float(payout),
-                cost_basis=float(position.total_cost),
-                realized_pnl=float(realized_pnl),
-                available_capital=float(self.available_capital),
-            )
+        settled = 0
+        for position in self.position_tracker.get_open_positions():
+            status = statuses.get(position.market_id, ResolutionStatus.UNKNOWN)
+            if self.settle_position(position.market_id, status):
+                settled += 1
 
-        if resolved:
+        if settled:
             logger.info(
                 "settlement_cycle_complete",
-                positions_settled=len(resolved),
+                positions_settled=settled,
                 total_realized_pnl=float(self.position_tracker.total_realized_pnl),
                 available_capital=float(self.available_capital),
             )
-        return len(resolved)
+        return settled
 
     def get_performance_summary(self) -> dict[str, float]:
         """
@@ -304,7 +342,7 @@ if __name__ == "__main__":
     """
     import asyncio
 
-    from ..domain.models import ArbitrageOpportunity, Market, Token
+    from ..domain.models import Market, Token
 
     async def demo_paper_trading() -> None:
         print("=== Paper Trading Demo ===\n")

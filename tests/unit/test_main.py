@@ -12,6 +12,7 @@ Interview Point - Why Test the Composition Root:
 - Every component can be individually correct while the graph is wrong
 """
 
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -20,7 +21,8 @@ from polymarket_arbitrage.api.client import PolymarketClient
 from polymarket_arbitrage.api.resilience import CircuitBreaker, RateLimiter
 from polymarket_arbitrage.config.constants import MAX_MARKET_PAGES
 from polymarket_arbitrage.config.settings import Settings
-from polymarket_arbitrage.domain.exceptions import APIError
+from polymarket_arbitrage.domain.exceptions import APIError, MarketNotFoundError
+from polymarket_arbitrage.domain.models import ResolutionStatus
 from polymarket_arbitrage.main import Application
 
 
@@ -223,3 +225,87 @@ class TestFetchMarkets:
     async def test_fetch_markets_without_client_returns_empty(self, app: Application) -> None:
         """Test fetching with no client returns empty rather than raising."""
         assert await app._fetch_markets() == []
+
+
+class TestResolutionStatus:
+    """Resolution status must be read from evidence and fail closed on doubt."""
+
+    @pytest.fixture
+    def app(self) -> Application:
+        """Application with a trader built."""
+        return Application(Settings())
+
+    class _StatusClient:
+        """Returns a fixed payload, or raises."""
+
+        def __init__(self, payload: Any = None, error: Exception | None = None):
+            self.payload = payload
+            self.error = error
+
+        async def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
+            if self.error is not None:
+                raise self.error
+            return self.payload
+
+    @pytest.mark.asyncio
+    async def test_resolved_status_is_recognised(self, app: Application) -> None:
+        """The terminal oracle state settles."""
+        app.api_client = self._StatusClient({"umaResolutionStatus": "resolved"})  # type: ignore[assignment]
+        assert await app._fetch_resolution_status("m") is ResolutionStatus.RESOLVED
+
+    @pytest.mark.asyncio
+    async def test_proposed_status_is_not_resolved(self, app: Application) -> None:
+        """A proposed resolution is not final, so the position is not redeemable.
+
+        Observed live: a market reported umaResolutionStatus="proposed" while the list
+        endpoint simultaneously reported it as closed and resolved.
+        """
+        app.api_client = self._StatusClient({"umaResolutionStatus": "proposed"})  # type: ignore[assignment]
+        assert await app._fetch_resolution_status("m") is ResolutionStatus.UNRESOLVED
+
+    @pytest.mark.asyncio
+    async def test_absent_status_is_unknown_not_unresolved(self, app: Application) -> None:
+        """A market that never entered the oracle process supports no assertion."""
+        app.api_client = self._StatusClient({"closed": True})  # type: ignore[assignment]
+        assert await app._fetch_resolution_status("m") is ResolutionStatus.UNKNOWN
+
+    @pytest.mark.asyncio
+    async def test_market_not_found_does_not_escape(self, app: Application) -> None:
+        """A 404 must degrade to UNKNOWN, not abort settlement for other positions.
+
+        Regression: the handler caught APIError, but MarketNotFoundError descends from
+        DataValidationError, so a delisted market raised straight through and killed the
+        whole settlement pass. Found by running against the live API.
+        """
+        app.api_client = self._StatusClient(error=MarketNotFoundError("gone"))  # type: ignore[assignment]
+        assert await app._fetch_resolution_status("gone") is ResolutionStatus.UNKNOWN
+
+    @pytest.mark.asyncio
+    async def test_api_error_is_unknown(self, app: Application) -> None:
+        """An unreachable API must never look like resolution."""
+        app.api_client = self._StatusClient(error=APIError("boom", status_code=500))  # type: ignore[assignment]
+        assert await app._fetch_resolution_status("m") is ResolutionStatus.UNKNOWN
+
+    @pytest.mark.asyncio
+    async def test_unexpected_shape_is_unknown(self, app: Application) -> None:
+        """A list where an object was expected supports no assertion."""
+        app.api_client = self._StatusClient([1, 2, 3])  # type: ignore[assignment]
+        assert await app._fetch_resolution_status("m") is ResolutionStatus.UNKNOWN
+
+    @pytest.mark.asyncio
+    async def test_settlement_leaves_unknown_positions_open(self, app: Application) -> None:
+        """An unreachable API must not settle anything."""
+        async with PolymarketClient(base_url="https://example.invalid") as client:
+            app.api_client = client
+            await app.startup()
+        assert app.paper_trader
+        app.paper_trader.position_tracker.add_position(
+            market_id="m1",
+            bundle_quantity=Decimal("100"),
+            yes_price=Decimal("0.48"),
+            no_price=Decimal("0.48"),
+        )
+        app.api_client = self._StatusClient(error=APIError("down", status_code=503))  # type: ignore[assignment]
+
+        assert await app._settle_open_positions() == 0
+        assert len(app.paper_trader.position_tracker.get_open_positions()) == 1

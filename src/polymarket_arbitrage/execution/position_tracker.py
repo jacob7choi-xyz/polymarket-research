@@ -36,11 +36,14 @@ class Position:
     """
 
     market_id: str
-    position_size: Decimal  # Bundles held; one bundle pays $1 at resolution
+    bundle_quantity: Decimal  # Bundles held; each pays $1 once the market resolves
     yes_price: Decimal  # Price paid for YES token
     no_price: Decimal  # Price paid for NO token
     entry_time: datetime
-    resolves_at: datetime | None = None  # Market end date, if known
+    # When the market becomes *eligible* for resolution. Informational only: it is not
+    # when the market resolves, and must never drive settlement. Measured against the
+    # live API, 100% of markets close after this timestamp (median +0.8h, max +11.7h).
+    market_end_at: datetime | None = None
     total_cost: Decimal = field(init=False)
 
     def __post_init__(self) -> None:
@@ -52,35 +55,33 @@ class Position:
         - Don't require caller to provide
         - Ensures consistency (cost = size * (yes + no))
         """
-        self.total_cost = self.position_size * (self.yes_price + self.no_price)
+        self.total_cost = self.bundle_quantity * (self.yes_price + self.no_price)
 
     @property
     def expected_profit(self) -> Decimal:
         """
-        Expected profit when market resolves.
+        Profit expected once the market resolves.
 
-        Arbitrage math:
-        - Buy YES for yes_price
-        - Buy NO for no_price
-        - One outcome wins → payout = position_size
+        Arbitrage math, per bundle:
+        - Buy YES for yes_price, buy NO for no_price
+        - Whichever side wins, the bundle redeems for $1
         - Profit = payout - total_cost
 
-        Interview Point - Guaranteed Profit:
-        - No market risk (don't care which outcome wins)
-        - Only execution risk (failure to execute)
-        - If YES + NO < 1.0 → guaranteed profit
+        This holds under the model assumption that equal quantities of complementary
+        YES and NO claims were acquired and the market resolves normally. It is not
+        unconditionally risk-free: it assumes both legs filled, no legging failure, no
+        void or invalid resolution, and no fees beyond those already priced in.
         """
-        return self.position_size - self.total_cost
+        return self.payout - self.total_cost
 
     @property
     def payout(self) -> Decimal:
-        """Cash received at resolution.
+        """Cash received once the market resolves.
 
-        One bundle of YES + NO pays exactly $1 whichever side wins, so the payout is
-        known at entry and does not depend on the outcome. This is what makes settlement
-        deterministic for arbitrage positions.
+        The *amount* is known at entry and needs no outcome data. The *timing* still
+        requires evidence that resolution actually occurred -- see ResolutionStatus.
         """
-        return self.position_size
+        return self.bundle_quantity
 
     @property
     def roi_percent(self) -> Decimal:
@@ -88,18 +89,6 @@ class Position:
         if self.total_cost == 0:
             return Decimal("0")
         return (self.expected_profit / self.total_cost) * Decimal("100")
-
-    def is_resolved(self, now: datetime | None = None) -> bool:
-        """Whether the market has passed its end date.
-
-        Reads the current time in whichever form ``resolves_at`` uses. Gamma returns end
-        dates with a 'Z' suffix, so they are timezone-aware, while hand-built positions
-        are typically naive; comparing across the two raises TypeError.
-        """
-        if self.resolves_at is None:
-            return False
-        reference = now if now is not None else datetime.now(self.resolves_at.tzinfo)
-        return self.resolves_at < reference
 
 
 class PositionTracker:
@@ -124,22 +113,22 @@ class PositionTracker:
     def add_position(
         self,
         market_id: str,
-        position_size: Decimal,
+        bundle_quantity: Decimal,
         yes_price: Decimal,
         no_price: Decimal,
         entry_time: datetime | None = None,
-        resolves_at: datetime | None = None,
+        market_end_at: datetime | None = None,
     ) -> None:
         """
         Add new position.
 
         Args:
             market_id: Unique market identifier
-            position_size: Bundles held; each pays $1 at resolution
+            bundle_quantity: Bundles held; each pays $1 once the market resolves
             yes_price: Price paid for YES token
             no_price: Price paid for NO token
             entry_time: When position was opened (defaults to now)
-            resolves_at: Market end date, required for the position to ever settle
+            market_end_at: When the market becomes eligible for resolution (informational)
 
         Raises:
             ValueError: If a position is already open for this market. Overwriting would
@@ -156,11 +145,11 @@ class PositionTracker:
 
         position = Position(
             market_id=market_id,
-            position_size=position_size,
+            bundle_quantity=bundle_quantity,
             yes_price=yes_price,
             no_price=no_price,
             entry_time=entry_time,
-            resolves_at=resolves_at,
+            market_end_at=market_end_at,
         )
 
         self.positions[market_id] = position
@@ -168,7 +157,7 @@ class PositionTracker:
         logger.info(
             "position_opened",
             market_id=market_id,
-            position_size=float(position_size),
+            bundle_quantity=float(bundle_quantity),
             yes_price=float(yes_price),
             no_price=float(no_price),
             total_cost=float(position.total_cost),
@@ -214,16 +203,8 @@ class PositionTracker:
         )
 
     def get_position(self, market_id: str) -> Position | None:
-        """Get position by market ID."""
+        """The open position for a market, if one exists."""
         return self.positions.get(market_id)
-
-    def get_resolved_positions(self, now: datetime | None = None) -> list[Position]:
-        """Open positions whose markets have passed their end date.
-
-        Returned as a list rather than a generator so callers can settle while iterating
-        without mutating the dict during traversal.
-        """
-        return [p for p in self.positions.values() if p.is_resolved(now)]
 
     def get_open_positions(self) -> list[Position]:
         """Get all open positions."""
@@ -280,14 +261,14 @@ if __name__ == "__main__":
     # Add positions
     tracker.add_position(
         market_id="0xmarket1",
-        position_size=Decimal("100"),
+        bundle_quantity=Decimal("100"),
         yes_price=Decimal("0.48"),
         no_price=Decimal("0.48"),
     )
 
     tracker.add_position(
         market_id="0xmarket2",
-        position_size=Decimal("50"),
+        bundle_quantity=Decimal("50"),
         yes_price=Decimal("0.45"),
         no_price=Decimal("0.50"),
     )
@@ -301,7 +282,7 @@ if __name__ == "__main__":
     print("\nOpen Positions:")
     for position in tracker.get_open_positions():
         print(f"  {position.market_id}:")
-        print(f"    Size: ${position.position_size}")
+        print(f"    Bundles: {position.bundle_quantity}")
         print(f"    Cost: ${position.total_cost}")
         print(f"    Expected profit: ${position.expected_profit} ({position.roi_percent:.2f}%)")
 

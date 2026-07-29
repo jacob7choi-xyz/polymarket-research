@@ -15,6 +15,7 @@ Interview Points:
 
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
@@ -95,7 +96,9 @@ class Market(BaseModel):
     no_token: Token = Field(description="NO outcome token")
     volume: Decimal = Field(description="24h trading volume (USD)")
     liquidity: Decimal = Field(description="Current liquidity (USD)")
-    end_date: datetime = Field(description="Market resolution date")
+    end_date: datetime = Field(
+        description="When the market becomes eligible for resolution, not when it resolves"
+    )
     active: bool = Field(description="Is market active for trading")
     category: str | None = Field(default=None, description="Market category")
 
@@ -231,6 +234,24 @@ class Market(BaseModel):
         - Has opportunity: Only trade profitable opportunities
         """
         return self.active and not self.is_expired and self.is_arbitrage_opportunity
+
+
+class ResolutionStatus(StrEnum):
+    """Whether a market has actually resolved and become redeemable.
+
+    A market's end date is not its resolution. Measured against the live API, 100% of
+    markets close *after* their `endDate` -- median 0.8 hours later, up to 11.7 hours in
+    a 32-market sample. Treating the end date as resolution credits capital and realizes
+    P&L before the position is redeemable, which manufactures capital the portfolio does
+    not have.
+
+    UNKNOWN exists so an unavailable or unrecognised upstream status cannot be silently
+    read as either state. Settlement requires RESOLVED specifically.
+    """
+
+    RESOLVED = "RESOLVED"
+    UNRESOLVED = "UNRESOLVED"
+    UNKNOWN = "UNKNOWN"
 
 
 class ArbitrageOpportunity(BaseModel):

@@ -22,12 +22,12 @@ import sys
 from typing import Any, NoReturn
 import uuid
 
-from .api.client import PolymarketClient
+from .api.client import DEPENDENCY_FAULTS, PolymarketClient
 from .api.resilience import CircuitBreaker, RateLimiter
 from .config.constants import MAX_MARKET_PAGES
 from .config.settings import Settings, get_settings
-from .domain.exceptions import APIError
-from .domain.models import Market, Token
+from .domain.exceptions import APIError, PolymarketError
+from .domain.models import Market, ResolutionStatus, Token
 from .execution.paper_trader import PaperTrader
 from .execution.position_tracker import PositionTracker
 from .monitoring.logging import bind_context, clear_context, configure_logging, get_logger
@@ -260,6 +260,91 @@ class Application:
 
         return markets
 
+    async def _settle_open_positions(self) -> int:
+        """Settle open positions whose markets are confirmed resolved.
+
+        The composition root does this because it owns both the API client and the
+        trader; the execution layer has no API dependency and must not acquire one.
+
+        Resolution is read from Gamma's own fields rather than inferred from the end
+        date. Measured across 32 markets, 100% closed *after* their end date -- median
+        0.8 hours later, up to 11.7 hours -- so settling on the end date would credit
+        capital while the position was still unredeemable.
+
+        Any market whose status cannot be established is reported UNKNOWN and its
+        position stays open. Failing to reach the API must not look like resolution.
+
+        Returns:
+            Number of positions settled.
+        """
+        if not self.paper_trader or not self.api_client:
+            return 0
+
+        open_positions = self.paper_trader.position_tracker.get_open_positions()
+        if not open_positions:
+            return 0
+
+        statuses: dict[str, ResolutionStatus] = {}
+        for position in open_positions:
+            statuses[position.market_id] = await self._fetch_resolution_status(position.market_id)
+
+        settled = self.paper_trader.settle_positions(statuses)
+        logger.info(
+            "settlement_checked",
+            positions_open=len(open_positions),
+            positions_settled=settled,
+            unknown=sum(1 for s in statuses.values() if s is ResolutionStatus.UNKNOWN),
+        )
+        return settled
+
+    async def _fetch_resolution_status(self, market_id: str) -> ResolutionStatus:
+        """Read a market's resolution status from Gamma's oracle field.
+
+        RESOLVED requires ``umaResolutionStatus == "resolved"`` and nothing else. Two
+        measured facts drove that choice:
+
+        1. The oracle has intermediate states. A market observed live reported
+           ``umaResolutionStatus="proposed"`` -- a resolution has been proposed but not
+           finalised, so the position is not yet redeemable. Only "resolved" is terminal.
+        2. ``closed`` is not usable as a second signal, because the list and single-market
+           endpoints contradict each other. For market 3037521 at the same moment, the
+           list endpoint returned ``closed=True, umaResolutionStatus="resolved"`` while
+           ``/markets/{id}`` returned ``closed=False, umaResolutionStatus="proposed"``.
+           Requiring a field whose value depends on which endpoint you ask would either
+           settle early or strand positions forever, depending on the direction of the
+           disagreement.
+
+        Any failure to establish the status returns UNKNOWN, which leaves the position
+        open. Catching PolymarketError rather than APIError matters: MarketNotFoundError
+        descends from DataValidationError, so a 404 on a delisted market would otherwise
+        escape and abort settlement for every other position in the cycle.
+        """
+        if not self.api_client:
+            return ResolutionStatus.UNKNOWN
+        try:
+            raw = await self.api_client.get_json(f"/markets/{market_id}")
+        except PolymarketError as e:
+            logger.warning(
+                "resolution_status_unavailable",
+                market_id=market_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return ResolutionStatus.UNKNOWN
+
+        if not isinstance(raw, dict):
+            logger.warning("resolution_status_unexpected_shape", market_id=market_id)
+            return ResolutionStatus.UNKNOWN
+
+        uma_status = str(raw.get("umaResolutionStatus") or "").lower()
+        if uma_status == "resolved":
+            return ResolutionStatus.RESOLVED
+        if not uma_status:
+            # Never entered the oracle process; we cannot assert either state
+            logger.debug("resolution_status_absent", market_id=market_id)
+            return ResolutionStatus.UNKNOWN
+        return ResolutionStatus.UNRESOLVED
+
     def _parse_gamma_market(self, raw: dict[str, Any]) -> Market | None:
         """
         Parse a raw Gamma API market dict into a domain Market.
@@ -371,8 +456,7 @@ class Application:
 
             # Settle first, so capital returned by resolved positions is available to
             # this cycle's trades rather than idling until the next one
-            if self.paper_trader:
-                self.paper_trader.settle_resolved_positions()
+            await self._settle_open_positions()
 
             # Fetch markets
             markets = await self._fetch_markets()
@@ -560,6 +644,10 @@ async def async_main() -> None:
     circuit_breaker = CircuitBreaker(
         failure_threshold=settings.circuit_breaker_failure_threshold,
         recovery_timeout=settings.circuit_breaker_recovery_timeout_seconds,
+        # Only dependency-health faults count. A deterministic 4xx means this request was
+        # unacceptable, not that Gamma is down -- and Gamma returns a routine 422 at its
+        # pagination ceiling on every cycle.
+        expected_exception=DEPENDENCY_FAULTS,
     )
 
     # Startup

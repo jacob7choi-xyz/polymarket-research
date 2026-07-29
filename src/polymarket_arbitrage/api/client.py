@@ -39,6 +39,18 @@ RETRYABLE_ERRORS: tuple[type[Exception], ...] = (
     RateLimitError,
 )
 
+# Failures that indicate the dependency itself is unhealthy, and so should count toward
+# opening the circuit. A deterministic client error must not: a 400 or 422 means this
+# request was unacceptable, not that the service is down, and letting those accumulate
+# would trip the breaker on a client-side bug while monitoring blamed the upstream.
+#
+# Gamma's routine HTTP 422 at its pagination ceiling is exactly this case. Relying on a
+# later success to reset the counter first would be accidental safety, not design.
+DEPENDENCY_FAULTS: tuple[type[Exception], ...] = (
+    TimeoutError,
+    ConnectionError,
+)
+
 logger = get_logger(__name__)
 
 

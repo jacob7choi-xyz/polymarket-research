@@ -14,12 +14,12 @@ Interview Point - Testing Stateful Components:
 - Test metrics accuracy
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
-from polymarket_arbitrage.domain.models import ArbitrageOpportunity
+from polymarket_arbitrage.domain.models import ArbitrageOpportunity, ResolutionStatus
 from polymarket_arbitrage.execution.paper_trader import PaperTrader
 from polymarket_arbitrage.execution.position_tracker import PositionTracker
 
@@ -165,7 +165,7 @@ class TestPositionTracker:
         """Test adding a position."""
         tracker.add_position(
             market_id="0xmarket",
-            position_size=Decimal("100"),
+            bundle_quantity=Decimal("100"),
             yes_price=Decimal("0.48"),
             no_price=Decimal("0.48"),
         )
@@ -173,13 +173,13 @@ class TestPositionTracker:
         position = tracker.get_position("0xmarket")
         assert position is not None
         assert position.market_id == "0xmarket"
-        assert position.position_size == Decimal("100")
+        assert position.bundle_quantity == Decimal("100")
 
     def test_close_position(self, tracker: PositionTracker) -> None:
         """Test closing a position."""
         tracker.add_position(
             market_id="0xmarket",
-            position_size=Decimal("100"),
+            bundle_quantity=Decimal("100"),
             yes_price=Decimal("0.48"),
             no_price=Decimal("0.48"),
         )
@@ -196,7 +196,7 @@ class TestPositionTracker:
         """Test calculating total unrealized P&L."""
         tracker.add_position(
             market_id="0xmarket1",
-            position_size=Decimal("100"),
+            bundle_quantity=Decimal("100"),
             yes_price=Decimal("0.48"),
             no_price=Decimal("0.48"),
         )
@@ -210,7 +210,7 @@ class TestPositionTracker:
         """Test getting position summary."""
         tracker.add_position(
             market_id="0xmarket1",
-            position_size=Decimal("100"),
+            bundle_quantity=Decimal("100"),
             yes_price=Decimal("0.48"),
             no_price=Decimal("0.48"),
         )
@@ -224,11 +224,13 @@ class TestPositionTracker:
 
 
 class TestSettlement:
-    """Positions must close and realize P&L, not merely accumulate.
+    """Settlement must require evidence of resolution, never infer it from a clock.
 
-    Regression: close_position() had no caller anywhere, so capital fell monotonically,
-    positions never closed, and realized P&L was permanently zero however many
-    profitable trades were executed. The trader simulated entry only.
+    Two regressions are covered. close_position() originally had no caller at all, so
+    capital fell monotonically and realized P&L was permanently zero. The first fix then
+    settled on market.end_date -- but measured across 32 live markets, 100% close *after*
+    their end date, median 0.8h later and up to 11.7h. That would credit capital while
+    the position was still unredeemable.
     """
 
     @pytest.fixture
@@ -236,84 +238,105 @@ class TestSettlement:
         """Trader with a real tracker."""
         return PaperTrader(initial_capital=Decimal("10000"), position_tracker=PositionTracker())
 
-    def _open(self, trader: PaperTrader, market_id: str, resolves_at: datetime) -> None:
-        """Open a 100-bundle position at 0.48/0.48 -> $96 cost, $100 payout."""
+    def _open(self, trader: PaperTrader, market_id: str) -> None:
+        """Open 100 bundles at 0.48/0.48 -> $96 cost, $100 payout, $4 profit."""
         trader.position_tracker.add_position(
             market_id=market_id,
-            position_size=Decimal("100"),
+            bundle_quantity=Decimal("100"),
             yes_price=Decimal("0.48"),
             no_price=Decimal("0.48"),
-            resolves_at=resolves_at,
+            market_end_at=datetime(2020, 1, 1, tzinfo=UTC),  # long past, must not matter
         )
         trader.available_capital -= Decimal("96")
 
-    def test_resolved_position_returns_capital_and_realizes_profit(
-        self, trader: PaperTrader
-    ) -> None:
-        """A bundle pays $1 regardless of outcome, so settlement needs no outcome data."""
-        self._open(trader, "0xdone", datetime.now() - timedelta(days=1))
+    def test_resolved_status_settles(self, trader: PaperTrader) -> None:
+        """Confirmed resolution returns capital and realizes profit."""
+        self._open(trader, "0xdone")
 
-        settled = trader.settle_resolved_positions()
-
-        assert settled == 1
-        # $10,000 - $96 cost + $100 payout
+        assert trader.settle_position("0xdone", ResolutionStatus.RESOLVED) is True
         assert trader.available_capital == Decimal("10004")
         assert trader.position_tracker.total_realized_pnl == Decimal("4.00")
-        assert trader.position_tracker.closed_positions_count == 1
         assert trader.position_tracker.get_open_positions() == []
 
-    def test_unresolved_position_is_left_alone(self, trader: PaperTrader) -> None:
-        """A market that has not ended yet must not be settled early."""
-        self._open(trader, "0xopen", datetime.now() + timedelta(days=30))
+    @pytest.mark.parametrize("status", [ResolutionStatus.UNRESOLVED, ResolutionStatus.UNKNOWN])
+    def test_anything_short_of_resolved_leaves_position_open(
+        self, trader: PaperTrader, status: ResolutionStatus
+    ) -> None:
+        """A market past its end date but not confirmed resolved must not settle.
 
-        assert trader.settle_resolved_positions() == 0
+        This is the case the end-date implementation got wrong: the position looks ready
+        and is not.
+        """
+        self._open(trader, "0xpending")
+
+        assert trader.settle_position("0xpending", status) is False
+        assert trader.available_capital == Decimal("9904")
         assert trader.position_tracker.total_realized_pnl == Decimal("0")
         assert len(trader.position_tracker.get_open_positions()) == 1
 
-    def test_position_without_end_date_never_settles(self, trader: PaperTrader) -> None:
-        """An unknown resolution date must not be treated as already resolved."""
-        self._open(trader, "0xunknown", None)  # type: ignore[arg-type]
+    def test_elapsed_end_date_alone_never_settles(self, trader: PaperTrader) -> None:
+        """No amount of elapsed time settles a position without resolution evidence."""
+        self._open(trader, "0xold")
 
-        assert trader.settle_resolved_positions() == 0
+        # Every position here has a 2020 end date; settling with no status supplied
+        assert trader.settle_positions({}) == 0
+        assert len(trader.position_tracker.get_open_positions()) == 1
 
-    def test_settlement_handles_timezone_aware_end_dates(self, trader: PaperTrader) -> None:
-        """Gamma end dates are timezone-aware; comparing to a naive now raises TypeError."""
-        self._open(trader, "0xtz", datetime(2020, 1, 1, tzinfo=UTC))
+    def test_batch_settles_only_confirmed_markets(self, trader: PaperTrader) -> None:
+        """A mixed batch settles exactly the confirmed subset."""
+        for mid in ("0xa", "0xb", "0xc"):
+            self._open(trader, mid)
 
-        assert trader.settle_resolved_positions() == 1
-        assert trader.position_tracker.total_realized_pnl == Decimal("4.00")
+        settled = trader.settle_positions(
+            {
+                "0xa": ResolutionStatus.RESOLVED,
+                "0xb": ResolutionStatus.UNRESOLVED,
+                # 0xc absent -> treated as UNKNOWN
+            }
+        )
 
-    def test_capital_recovers_across_repeated_cycles(self, trader: PaperTrader) -> None:
-        """Capital must not drift downward once settlement exists."""
-        start = trader.available_capital
-        for i in range(5):
-            self._open(trader, f"0xm{i}", datetime.now() - timedelta(hours=1))
-            trader.settle_resolved_positions()
+        assert settled == 1
+        assert {p.market_id for p in trader.position_tracker.get_open_positions()} == {
+            "0xb",
+            "0xc",
+        }
 
-        assert trader.available_capital == start + Decimal("20.00")
-        assert trader.position_tracker.closed_positions_count == 5
+    def test_settling_unknown_market_is_a_noop(self, trader: PaperTrader) -> None:
+        """Resolution evidence for a market we hold no position in changes nothing."""
+        assert trader.settle_position("0xnothing", ResolutionStatus.RESOLVED) is False
+        assert trader.available_capital == Decimal("10000")
 
-    def test_duplicate_position_is_rejected(self, trader: PaperTrader) -> None:
-        """Overwriting an open position would silently lose its cost basis."""
-        self._open(trader, "0xdup", datetime.now() + timedelta(days=1))
-        with pytest.raises(ValueError, match="already open"):
-            self._open(trader, "0xdup", datetime.now() + timedelta(days=1))
+    def test_capital_conservation_invariant(self, trader: PaperTrader) -> None:
+        """available + deployed - realized must always equal initial capital."""
+        for mid in ("0xa", "0xb", "0xc"):
+            self._open(trader, mid)
+        trader.settle_positions({"0xa": ResolutionStatus.RESOLVED})
+
+        s = trader.get_performance_summary()
+        reconciled = (
+            Decimal(str(s["available_capital"]))
+            + Decimal(str(s["capital_deployed"]))
+            - Decimal(str(s["total_realized_pnl"]))
+        )
+        assert reconciled == trader.initial_capital
 
     def test_capital_deployed_excludes_realized_gains(self, trader: PaperTrader) -> None:
         """Deployment is the sum of open cost bases, not initial minus available.
 
         Regression: subtracting available from initial conflates deployed capital with
-        realized profit. It only agreed while realized P&L was permanently zero -- one
-        settled winner and the figure understates deployment by the gain.
+        realized profit. It agreed only while realized P&L was permanently zero.
         """
-        self._open(trader, "0xsettled", datetime.now() - timedelta(days=1))
-        self._open(trader, "0xopen", datetime.now() + timedelta(days=30))
-        trader.settle_resolved_positions()
+        self._open(trader, "0xsettled")
+        self._open(trader, "0xopen")
+        trader.settle_positions({"0xsettled": ResolutionStatus.RESOLVED})
 
-        summary = trader.get_performance_summary()
+        s = trader.get_performance_summary()
+        assert s["capital_deployed"] == 96.0
+        assert s["total_realized_pnl"] == 4.0
+        assert s["available_capital"] == 9908.0
 
-        # One open position at $96 cost basis, and $4 of realized gain that is not
-        # deployed capital
-        assert summary["capital_deployed"] == 96.0
-        assert summary["total_realized_pnl"] == 4.0
-        assert summary["available_capital"] == 9908.0
+    def test_duplicate_position_is_rejected(self, trader: PaperTrader) -> None:
+        """Overwriting an open position would silently lose its cost basis."""
+        self._open(trader, "0xdup")
+        with pytest.raises(ValueError, match="already open"):
+            self._open(trader, "0xdup")
