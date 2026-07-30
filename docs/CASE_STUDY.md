@@ -12,16 +12,22 @@ statements.
 
 **The suite never lied about the contracts it tested. I had asked it the wrong questions.**
 
-The most consequential failures survived code review, linting, type checking, and 254 unit
-tests because the missing contracts concerned integration, upstream semantics, or statistical
-structure rather than component behaviour. Some were first suspected by reading code or by
-adversarial review — including one found while fact-checking this document — but every one of
-them became undeniable only when the assumption was tested against the real system and its
-data.
+These failures survived code review, linting, type checking, and 254 unit tests because the
+missing contracts concerned integration, upstream semantics, data provenance, or statistical
+structure rather than component behaviour.
+
+Different failure classes needed different evidence, and pretending otherwise would be its own
+overclaim. Dimensional analysis alone settles a unit mismatch: `min(bundle_count, dollars)` is
+incoherent on inspection and needs no experiment. Reading an exception hierarchy settles
+whether `except APIError` catches a 404. But the failures whose contracts depended on the
+outside world -- what a field means, whether a filter is honoured, whether a price is
+executable, whether a row is an independent observation -- were only ever settled by probing
+the real system and auditing the real data. Code inspection found some of these; for the rest
+it was indispensable.
 
 At its worst moment the repository had **254 passing tests, clean lint, clean types, and an
 arbitrage engine that could not fetch a single market.** It had also produced a +20.5%
-simulated return that turned out to rest on a price nobody could have traded at.
+simulated return using an entry price that had never been demonstrated to be executable.
 
 ---
 
@@ -446,3 +452,30 @@ every claim is tagged as measured, assumed, unsupported, or rejected — and a f
 map of the ways a correct-looking program can be confidently wrong.
 
 That is a worse trading result and a better engineering one.
+
+---
+
+## Appendix — provenance of the figures
+
+Two kinds of number appear above, and they do not carry equal weight.
+
+**Derivable from the frozen dataset.** Twenty-six quoted figures were recomputed from
+`research/archive/v1` in a final reconciliation pass. All twenty-six agree; none mismatch.
+They include every cohort size (9,922 / 368 / 323 / 497 / 18), the full politics decomposition
+(n=223/40/60 with biases -0.0529 / +0.0882 / -0.1259), the headline -0.0490, the crypto null
+(+0.0104, CI [-0.0267, +0.0475]), and the entire Weather ladder analysis (348 ladders, mean
+size 5.17, price sum 0.983, outcome sum 0.782, 227 winner-dropping ladders = 65.2%, +0.1718
+filtered, +0.0390 unfiltered, residual 0.0389). Given the frozen database and the recorded
+seed, these reproduce exactly.
+
+**Recorded from live API probes.** Six figures cannot be re-derived from the frozen dataset,
+because they describe an external service's state at a moment in time: the 343-market
+`YES + NO = 1.0000` characterisation, the 32-market close-lag measurement (median +0.8h, max
++11.7h), the `negRiskMarketID` filter returning 0 of 25 matching records, `interval=1m`
+returning zero points at five months, the list-versus-single endpoint contradiction on market
+3037521, and the midpoint comparison against a live order book. These were observed once and
+written down. A reader re-running them today may see different values as the feed moves.
+
+The distinction matters because this document's argument is about provenance. Claiming every
+figure had been mechanically re-verified would be precisely the kind of unearned strength the
+project spent its length learning to strip out. Twenty-six were. Six were observed.
