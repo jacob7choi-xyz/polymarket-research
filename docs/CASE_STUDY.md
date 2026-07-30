@@ -7,9 +7,17 @@ A case study in falsifying your own quantitative system.
 ## The one-sentence version
 
 Tests establish that code satisfies a specified contract. They cannot establish that you
-specified the right contract. This project failed, repeatedly, in the gap between those
-two statements — and the failures were only ever found by measuring the real system, never
-by reading the code.
+specified the right contract. This project failed, repeatedly, in the gap between those two
+statements.
+
+**The suite never lied about the contracts it tested. I had asked it the wrong questions.**
+
+The most consequential failures survived code review, linting, type checking, and 254 unit
+tests because the missing contracts concerned integration, upstream semantics, or statistical
+structure rather than component behaviour. Some were first suspected by reading code or by
+adversarial review — including one found while fact-checking this document — but every one of
+them became undeniable only when the assumption was tested against the real system and its
+data.
 
 At its worst moment the repository had **254 passing tests, clean lint, clean types, and an
 arbitrage engine that could not fetch a single market.** It had also produced a +20.5%
@@ -22,8 +30,9 @@ simulated return that turned out to rest on a price nobody could have traded at.
 Two systems sharing a repository:
 
 1. **An arbitrage detection engine.** Poll Polymarket's Gamma API, find binary markets where
-   `YES + NO < 0.99`, and paper-trade the guaranteed spread. One outcome must win, so a
-   bundle of both sides redeems for exactly $1.
+   `YES + NO < 0.99`, and paper-trade the spread. The premise: one outcome must win, so a
+   bundle of both sides redeems for exactly $1 — making the payoff deterministic under the
+   model, though "guaranteed" would assume away fills, fees, and legging risk.
 2. **A calibration research pipeline.** Collect resolved markets, ask whether market prices
    predict outcomes accurately, and look for categories where the crowd is systematically
    wrong.
@@ -98,8 +107,9 @@ Two thousand one hundred markets fetched successfully, then thrown away by the h
 to make failures survivable.
 
 **The pattern:** a green suite tells you your components behave as you wrote them. It says
-nothing about whether the system does what you think. Each of these was found by running one
-real cycle against the live API.
+nothing about whether the system does what you think. Three of these four surfaced the first
+time a real cycle ran against the live API; the threshold mismatch was reproduced from a
+constructed case once its shape was suspected. None was visible from the suite.
 
 ---
 
@@ -114,20 +124,28 @@ min=1.0000   median=1.0000   max=1.0000
 markets with YES + NO < 0.99:  0
 ```
 
-Every market's prices sum to **exactly 1.0000**. Gamma's `outcomePrices` are normalized, so
-the condition the strategy searches for is unreachable from that feed — not rare, not
-competed away, unreachable.
+Across 343 sampled live tradeable markets, `outcomePrices` summed to **exactly 1.0000 in
+every case**. What produces that is not established here — "normalized" would be a claim
+about upstream construction, and the whole point of this document is not to infer mechanism
+from behaviour. What *is* established is narrower and sufficient: whatever the upstream
+construction, the condition `YES + NO < 0.99` was unreachable from the observed feed. Not
+rare, not competed away — unreachable.
 
 Zero opportunities is the correct answer. The engine is right and the premise was wrong.
 
-Real static arbitrage requires `ask_yes + ask_no < 1` from the CLOB order book. Mid-prices
-summing below 1 is a different and weaker statement than two asks you can actually cross.
+An executable static-arbitrage claim would require something stronger than a pair of quoted
+prices summing below 1: sufficient CLOB ask depth on both legs such that total acquisition
+cost — including applicable fees and execution effects — sits below the bundle's terminal
+redemption value, at a quantity you can actually fill. Two best asks summing to 0.995 proves
+nothing if the size is one share, the next level crosses $1, fees consume the spread, or the
+legs don't fill together.
+
 The distinction between a reference price and an executable price turned out to matter twice
 more before this project was done.
 
 ---
 
-## Part 3 — A +17pp signal that was entirely an artifact
+## Part 3 — A +17pp signal that dissolved under scrutiny
 
 The research pipeline reported per-category calibration bias. Weather markets looked
 dramatically overpriced: **+17.2 percentage points**, tight confidence interval, n=368.
@@ -174,18 +192,27 @@ The analysis filtered prices to `[0.05, 0.95]` to exclude near-certain markets. 
 that deletes the favourite — the rung that actually won — and keeps the losers. Averaging
 `price - outcome` over a cohort composed of losers manufactures positive bias.
 
-That accounts for 77% of the signal. The residual has an exact explanation too:
+That accounts for 77% of the signal. The residual reconciles too:
 
 ```
 (0.983 - 0.782) / 5.17 rungs = +0.0389        observed residual: +0.0390
 ```
 
-Prices sum to ~1 but outcomes sum to 0.78, because the collection filter dropped low-volume
-rungs — so 22% of ladders have no winner in the dataset at all. An accounting hole, not a
-forecasting error.
+Prices summed to 0.983 while observed outcomes summed to only 0.782, which shows the
+reconstructed ladders were **incomplete** — roughly 22% contain no winning rung at all. The
+collection process did apply a $10,000 minimum-volume rule, but because the frozen dataset
+never preserved authoritative group membership, the cause of each individual missing rung
+cannot be reconstructed from it. Incompleteness is established; its precise cause is not.
 
-**The entire +17pp decomposes into two collection and filtering artifacts.** That is
-arithmetic, not inference.
+Either way it is an accounting hole rather than a forecasting error, and within the 348
+reconstructed ladders it numerically accounts for the residual.
+
+**Scope matters here.** What is established is that *within the reconstructed sample*, the
+entire observed +17pp row-level effect is numerically accounted for by band selection plus
+incomplete ladder representation. That falsifies the claim that the figure represented
+genuine calibration bias. It does not establish that Weather markets are well calibrated —
+the ladders were reconstructed from a templated question string rather than from authoritative
+group identity, so this rejects the old estimate without producing a trustworthy new one.
 
 ---
 
@@ -207,7 +234,10 @@ Politics in-band cohort, n=323, decomposed:
 Sixty-nine percent of "political market underconfidence" is *"Will Trump say 'Sleepy Joe'
 this week?"* and *"Will Keir Starmer say 'Mr. Speaker' 15+ times during PMQs?"*
 
-The label was wrong. The construct was wrong. And decomposed, no subgroup robustly carries
+These are politically themed, so the sharper problem is not that they are non-political but
+that the cohort is overwhelmingly one narrow speech-event subtype rather than a broad sample
+of political forecasting questions. "Political markets are underconfident" is not a claim this
+cohort can support. And decomposed, no subgroup robustly carries
 the headline: the 69% majority is not individually significant, the ladder subgroup points
 the *opposite* direction, and the only significant slice is a 60-market residual that is
 itself a post-hoc cut.
@@ -285,9 +315,11 @@ Two further bugs surfaced in the fix, both found by running it rather than readi
   umaResolutionStatus="proposed"` from the other.
 
 Settlement now requires an explicit typed `ResolutionStatus.RESOLVED`, with `UNRESOLVED` and
-`UNKNOWN` both leaving the position open. The single remaining assumption — that the oracle's
-terminal status implies redeemability — is isolated to one method and recorded in the README
-as unvalidated.
+`UNKNOWN` both leaving the position open. One assumption remains: that Gamma's `"resolved"`
+status implies the position is redeemable. It excludes the earlier `"proposed"` state, which is
+directionally safer, but the mapping itself has been reasoned about rather than demonstrated.
+It is isolated to a single method and recorded in the README as open — the typed enum is where
+proof is *assumed*, not where it is established.
 
 **This is the most useful part of the project.** Knowing the failure mode in detail did not
 prevent committing it. What caught it was an outside reviewer asking what a field name was
@@ -301,19 +333,19 @@ Each was established by measurement, not inspection.
 
 | Assumption | How it was tested | Verdict |
 |---|---|---|
-| Gamma prices can reveal executable arbitrage | 343 live markets characterized | **Rejected** — YES+NO = exactly 1.0000 in every case |
+| Gamma prices can reveal executable arbitrage | 343 live markets characterized | **Rejected** — YES+NO summed to exactly 1.0000 in every sampled case, making the condition unreachable from that feed |
 | Crypto markets are systematically overconfident | Bootstrap CI, volume weighting, monthly splits, quintiles | **Rejected** — +0.0104, CI [-0.0267, +0.0475] |
 | The nearest historical tick is causally valid | Signed timestamp audit | **Rejected** — 46.1% select a post-target tick |
 | Look-ahead explains the politics result | Causal re-extraction of every snapshot | **Rejected** — moved -0.0490 → -0.0495 |
-| Weather's +17pp is real calibration error | 348 ladders reconstructed | **Rejected** — filter deletes the winner in 65.2% of ladders |
-| "Politics" means political markets | Cohort composition audit | **Rejected** — 69% is speech-phrase novelty |
+| Weather's +17pp is real calibration error | 348 ladders reconstructed from question text | **Rejected as a calibration claim** — within the reconstructed sample, band selection plus incomplete ladder representation numerically account for the effect. Does not establish Weather is well calibrated |
+| "Politics" is a broad political-forecasting cohort | Cohort composition audit | **Rejected** — 69% is one narrow speech-event subtype |
 | `[0.05, 0.95]` is neutral data cleaning | Filtered vs unfiltered | **Rejected** — it is a selection operator on predictions |
 | One database row is one observation | Group identity probe | **Rejected** — rows are rungs of shared structures |
 | `negRiskMarketID` filters server-side | Live API probe | **Rejected** — HTTP 200, 0 of 25 records match |
 | `interval=1m` retrieves old history | Re-fetch at 5 months | **Rejected** — returns zero; explicit bounds work |
 | `end_date` is when a market resolves | 32-market close-lag measurement | **Rejected** — 100% of observed closes came later |
 | `except APIError` catches a 404 | Exception MRO check | **Rejected** — `MarketNotFoundError` is a `DataValidationError` |
-| The historical price is an executable fill | Compared against midpoint, book, last trade | **Unsupported** — consistent with a mid, never shown transactable |
+| The historical price is an executable fill | Compared against midpoint, book sides, last trade | **Unsupported** — tight-spread probes were consistent with midpoint behaviour, but the reference price was never demonstrated transactable, and wide spreads were untested |
 | ROADMAP's 1h result (n=2,523) | Re-ran the same query | **Retracted** — yields 18; provenance insufficient to reconstruct |
 
 Note the second-order entries. Several of these reject not the original hypothesis but the
@@ -324,19 +356,21 @@ in different directions, is what eventually produced the mechanism.
 
 ## What the engineering fixes actually were
 
-The bugs were symptoms. Each fix targeted the boundary that allowed them.
+The bugs were symptoms. The table below separates **what actually changed** from **the durable
+design lesson**, because conflating those two is the same error this document is about — a
+principle stated as though it were shipped.
 
-| Defect | Structural fix |
-|---|---|
-| Composition root discarded the client | Client injected and owned by the caller; `startup()` fails fast without one |
-| Resilience built but never invoked | Rate limiter, retry and breaker applied inside the client, so no call site can forget them |
-| Breaker counted a routine 422 | Retryability and breaker-worthiness separated; only dependency faults count |
-| Read path mutated schema on connect | Enforced read-only accessor (`mode=ro` + `query_only`); migrations only at an explicit entry point |
-| Metadata refresh erased derived columns | Stage ownership; upstream writers cannot touch downstream state |
-| Realized P&L permanently zero | Settlement wired into the cycle, gated on typed resolution status |
-| `capital_deployed` conflated with gains | Sum of open cost bases; ledger reconciles exactly in `Decimal` |
-| Financial units ambiguous in the ledger | `position_size` → `bundle_quantity`; dimensional test with asymmetric prices. **Not fully fixed** — see below |
-| Findings not attributable to a dataset | Dataset frozen, content-hashed, write-protected through four layers |
+| Defect | What changed now | Durable design lesson |
+|---|---|---|
+| Composition root discarded the client | Client injected and owned by the caller; `startup()` fails fast without one | A component must not construct a dependency whose lifecycle a caller already owns |
+| Resilience built but never invoked | Limiter, retry and breaker applied inside the client | Protection belongs at the boundary, not at each call site that must remember it |
+| Breaker counted a routine 422 | Only dependency faults count toward the breaker | Retryability and breaker-worthiness are separate axes |
+| Read path mutated schema on connect | Enforced read-only accessor (`mode=ro` + `query_only`); migration only at an explicit entry point | Reading evidence must not confer authority to alter it |
+| Metadata refresh erased derived columns | **Containment only** — v1 frozen and all writer paths revoked. Stage-owned tables were *not* built | A corrected lineage needs storage owned per pipeline stage, so an upstream refresh cannot reach downstream state |
+| Realized P&L permanently zero | Settlement wired into the cycle, gated on typed resolution status | A capability with no caller is not a feature |
+| `capital_deployed` conflated with gains | Sum of open cost bases; ledger reconciles exactly in `Decimal` | Derive quantities from their definition, not from a subtraction that happens to agree |
+| Financial units ambiguous | `position_size` → `bundle_quantity` in the ledger, with a dimensional test. **The producer still mixes units** — see below | Units belong in the type or the name, because coincidentally similar magnitudes hide the error |
+| Findings not attributable to a dataset | Dataset frozen, content-hashed, write-protected through four layers | Preserve the corpus that produced a claim before correcting the claim |
 
 The suite grew from 254 to 326 tests. That number is not the point. Every added test exists
 because a specific contract was discovered to be missing — the ordering was *find the
@@ -390,8 +424,10 @@ different risk profile.
 
 ## Where the project actually stands
 
-**No positive research claim survives.** Weather is invalidated as an artifact. Politics fails
-construct validity and is measured on a cohort that is mostly not political. The crypto null
+**No positive research claim from v1 currently meets the evidentiary standard applied in this
+review.** Weather's estimate is invalidated as an artifact of the analysis. Politics fails
+construct validity: it is measured on a cohort that is 69% one narrow speech-event
+subtype rather than a broad sample of political forecasting questions. The crypto null
 result stands at the aggregate level but has not been revalidated under event-aware
 methodology — and a null can be manufactured by canceling subgroup biases just as easily as a
 positive can.
