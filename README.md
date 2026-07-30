@@ -6,7 +6,7 @@
 [![Linting: ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![codecov](https://codecov.io/gh/jacob7choi-xyz/polymarket-arbitrage/branch/main/graph/badge.svg)](https://codecov.io/gh/jacob7choi-xyz/polymarket-arbitrage)
+[![codecov](https://codecov.io/gh/jacob7choi-xyz/polymarket-research/branch/main/graph/badge.svg)](https://codecov.io/gh/jacob7choi-xyz/polymarket-research)
 
 ---
 
@@ -262,20 +262,33 @@ python -m polymarket_arbitrage.main
 ### Running with Docker
 
 ```bash
-# Build and start entire stack (app + Prometheus + Grafana)
-docker compose up -d
+# One-time: Grafana credentials are required. Compose refuses to start without them
+# rather than falling back to admin/admin.
+cp .env.example .env        # then edit GRAFANA_ADMIN_PASSWORD
+
+# Build and start the stack (app + Prometheus + Grafana)
+docker compose up -d --build
 
 # View logs
 docker compose logs -f arbitrage-detector
 
-# Access dashboards
-# - Grafana: http://localhost:3000 (admin/admin)
+# Dashboards -- bound to loopback only, not reachable from the network
+# - Grafana:    http://localhost:3000   (credentials from .env; dashboard under "Polymarket")
 # - Prometheus: http://localhost:9091
-# - Metrics: http://localhost:9090/metrics
+# - Metrics:    http://localhost:9090/metrics
 
-# Stop stack
+# Stop, keeping Grafana state and metrics history
 docker compose down
+
+# To rotate the Grafana password later, use its CLI -- editing .env alone has no effect
+# once the volume exists, and `down -v` would delete your metrics history with it:
+#   docker compose exec grafana \
+#     grafana cli --homepath /usr/share/grafana admin reset-admin-password '<new>'
 ```
+
+The Grafana datasource and an 11-panel dashboard are provisioned from `monitoring/grafana/`,
+so they appear on first boot with no manual setup. Expect the opportunity and trade panels to
+read zero -- see [Key Findings](#key-findings) for why.
 
 ### Running Tests
 
