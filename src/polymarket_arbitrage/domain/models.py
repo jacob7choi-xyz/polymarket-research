@@ -147,8 +147,15 @@ class Market(BaseModel):
         Deterministic terminal payoff under the paper model -- not risk-free. The model
         assumes matched quantities of genuinely complementary claims, both legs filled
         without legging risk, ordinary (non-void) resolution, and no costs beyond those
-        priced in. These prices are also Gamma mid-prices, which are not executable: a
-        real entry crosses the ask on both legs.
+        priced in.
+
+        These are Gamma reference/outcome prices, which are not executable ask prices; a
+        real static-arbitrage entry would need CLOB asks, depth and fees. What has been
+        measured about them is narrower than "they are mid-prices": across 343 live
+        tradeable markets, YES + NO summed to exactly 1.0000 in every case, so this
+        condition is unreachable from that feed. Separately, CLOB `/prices-history`
+        matched the book midpoint on tight-spread markets -- a different endpoint and a
+        different claim, which should not be transferred to Gamma outcome prices.
         """
         return self.is_arbitrage_at(ARBITRAGE_THRESHOLD)
 

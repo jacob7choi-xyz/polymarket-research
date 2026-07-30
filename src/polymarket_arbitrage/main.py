@@ -318,6 +318,14 @@ class Application:
         open. Catching PolymarketError rather than APIError matters: MarketNotFoundError
         descends from DataValidationError, so a 404 on a delisted market would otherwise
         escape and abort settlement for every other position in the cycle.
+
+        Unproven assumption, deliberately isolated here: that `umaResolutionStatus ==
+        "resolved"` means the position is actually redeemable. It is the terminal oracle
+        state and "proposed" is correctly excluded, so this is conservative -- but the
+        mapping has not been demonstrated, only reasoned about. This method is the single
+        place that assumption lives. Everything downstream consumes a typed
+        ResolutionStatus and would be unaffected by replacing it with a better-evidenced
+        adapter. The enum is where proof is *assumed*, not where it is established.
         """
         if not self.api_client:
             return ResolutionStatus.UNKNOWN

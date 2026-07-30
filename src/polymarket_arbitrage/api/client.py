@@ -49,8 +49,15 @@ RETRYABLE_ERRORS: tuple[type[Exception], ...] = (
 #
 # Retryability and breaker-worthiness are separate axes, and 429 is the case that proves
 # it: it is retryable (the request may succeed once we slow down) but deliberately not a
-# breaker fault, because a throttling service is reachable and healthy. Opening the
-# circuit on throttling would convert back-pressure into an outage.
+# breaker fault. A 429 shows the dependency is reachable enough to enforce a quota, which
+# is back-pressure rather than sufficient evidence of unavailability -- it does not by
+# itself establish that the service is healthy. Opening the circuit on throttling would
+# convert back-pressure into a self-inflicted outage.
+#
+# Known gap: retries of a 429 use local exponential backoff and do not honour the
+# response's Retry-After header, even though RateLimitError carries the value. So the
+# honest description is "retries rate-limited responses with local backoff", not
+# "respects upstream rate-limit guidance".
 DEPENDENCY_FAULTS: tuple[type[Exception], ...] = (
     TimeoutError,
     ConnectionError,

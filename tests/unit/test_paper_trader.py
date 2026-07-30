@@ -323,8 +323,13 @@ class TestSettlement:
         assert trader.position_tracker.total_realized_pnl == pnl_after_first
         assert trader.position_tracker.closed_positions_count == closed_after_first
 
-    def test_capital_conservation_invariant_exact(self, trader: PaperTrader) -> None:
+    def test_cash_and_cost_basis_ledger_reconciles_exactly(self, trader: PaperTrader) -> None:
         """available + open cost basis - realized == initial, in exact Decimal.
+
+        This is a cash/cost-basis ledger reconciliation, not portfolio mark-to-market
+        equity: open positions are carried at cost basis and never revalued, and realized
+        gains are already folded into available capital. Naming it "portfolio value"
+        would claim a valuation the tracker does not compute.
 
         Asserted on the Decimal attributes rather than the summary dict, which converts
         to float for Prometheus. A conservation invariant checked through float would not
