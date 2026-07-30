@@ -70,10 +70,18 @@ services:
     environment:
       # Sourced from the environment, never committed. The `:?` form makes compose
       # fail loudly if unset rather than silently falling back to admin/admin.
-      # NOTE: Grafana applies these only when initialising a fresh database. If the
-      # grafana-data volume already exists, changing them here has no effect and the old
-      # credential keeps working -- verified: setting them on an existing volume left
-      # admin/admin accepted. Run `docker compose down -v` when rotating.
+      # NOTE: Grafana applies these only when initialising a fresh database. On an
+      # existing grafana-data volume, changing them here has no effect and the old
+      # credential keeps working -- verified: setting them on a populated volume left
+      # admin/admin accepted while compose validated and the container reported healthy.
+      #
+      # To ROTATE an existing password, use Grafana's own CLI. This preserves both
+      # databases; `down -v` would delete prometheus-data too, making rotation cost your
+      # metrics history and quietly discouraging it:
+      #   docker compose exec grafana \
+      #     grafana cli --homepath /usr/share/grafana admin reset-admin-password '<new>'
+      #
+      # Reserve `down -v` for deliberately resetting the whole monitoring stack.
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:?set GRAFANA_ADMIN_USER in .env}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
       - GF_USERS_ALLOW_SIGN_UP=false

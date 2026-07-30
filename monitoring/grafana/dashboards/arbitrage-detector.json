@@ -505,8 +505,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Arbitrage profit per dollar (observed)",
-      "description": "Histogram of detected spreads. Empty when no opportunity qualifies.",
+      "title": "Arbitrage profit per bundle (observed)",
+      "description": "Distribution of 1 - (yes + no) for detected opportunities. This is profit per bundle, not return on capital: at a 0.96 bundle cost, 0.0400 per bundle is a 4.17% return on cost. The underlying metric is still named arbitrage_profit_per_dollar; see README Open Assumptions.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"

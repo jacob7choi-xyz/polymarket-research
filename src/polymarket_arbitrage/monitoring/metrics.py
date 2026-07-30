@@ -49,7 +49,12 @@ TRADES_EXECUTED = Counter(
 
 ARBITRAGE_PROFIT_PER_DOLLAR = Histogram(
     "arbitrage_profit_per_dollar",
-    "Profit per dollar invested in arbitrage",
+    # Measures profit per BUNDLE (1 - (yes + no)), not return on capital invested.
+    # At a bundle cost of 0.96 these differ: 0.0400 per bundle vs 0.0417 return on
+    # cost. The metric name predates that distinction; renaming it touches 20 call
+    # sites across the domain model, strategy and executor, so the correction is
+    # recorded in the README rather than bundled into a monitoring change.
+    "Arbitrage profit per bundle: 1 - (yes_price + no_price). Not return on cost.",
     # Buckets: Typical arbitrage profits (0.1% to 10%)
     buckets=[0.001, 0.005, 0.01, 0.02, 0.05, 0.1],
 )

@@ -670,6 +670,8 @@ against known-resolved markets, not an accounting rewrite.
 | Gamma outcome prices | Measured to sum to exactly 1.0000 across 343 live markets. Not established to be mid-prices, and not executable ask prices |
 | Paper-trade lifecycle | Implemented, tested, and wired into the detection cycle. Never exercised against live data, because no position opens on a feed whose prices sum to 1 |
 | Position sizing units | The ledger uses explicit `bundle_quantity`, but `_calculate_position_size` still caps a bundle count with a dollar amount (`min(max_position_size, liquidity * 0.01)`). Numerically indistinguishable while a bundle costs ~$1; a correct fix sizes in capital and divides by bundle unit cost |
+| `arbitrage_profit_per_dollar` naming | Same root cause. The metric and the `Market` property observe `1 - (yes + no)`, which is profit **per bundle**, not return on capital: at a 0.96 bundle cost that is 0.0400 per bundle versus a 4.17% return on cost. The Prometheus help text and the Grafana panel say so; the identifier is unchanged because renaming it touches 20 call sites across the domain model, strategy and executor, and that belongs in the sizing redesign rather than a monitoring commit |
+| Monitoring posture | Loopback-bound, digest-pinned images, credentials from an uncommitted `.env`. That is a defensible **local development** posture, not secret management and not a production monitoring stack -- there is no alerting or SLO story |
 
 ## Acknowledgments
 
