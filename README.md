@@ -14,17 +14,22 @@
 
 This is a **learning and portfolio project** with two components:
 
-1. **Arbitrage Detection Engine** -- a production-grade paper trading system that detects when YES + NO prices sum to less than $0.99 on Polymarket binary markets, simulating trades via a paper trading engine.
-2. **Research Pipeline** -- data collection and calibration analysis studying how well Polymarket prices predict actual outcomes, with 9,900+ resolved markets analyzed.
+1. **Arbitrage Detection Engine** -- a paper trading system that looks for Polymarket binary
+   markets where YES + NO sums to less than $0.99, and simulates the trade.
+2. **Research Pipeline** -- data collection and calibration analysis studying how well
+   Polymarket prices predict outcomes, across 9,922 resolved markets.
 
-- **Paper trading only** (no real money)
-- **Production patterns** (circuit breaker, retry, rate limiting)
+- **Paper trading only** (no real money, no wallet, no order submission)
+- **Boundary-applied resilience** (rate limiting, retry, circuit breaking on every request)
 - **Clean architecture** (separation of concerns, dependency injection)
-- **254 tests, 60% coverage** (unit, integration, property-based)
-- **Full observability** (structured logging, Prometheus metrics)
-- **Calibration research** (hypothesis testing, backtesting, +20.5% net ROI strategy)
+- **326 tests | 69% coverage | ruff and mypy clean**
+- **Observability** (structured logging, Prometheus metrics, provisioned Grafana dashboard)
+- **Falsification record** -- every research claim this project made was tested and retracted;
+  see [docs/CASE_STUDY.md](docs/CASE_STUDY.md)
 
-**This is NOT a production trading system.**
+**This is NOT a production trading system.** Both headline results are negative, deliberately
+so: the arbitrage strategy found no qualifying signal in the observed feed, and no positive
+research claim survived review. The write-up is the deliverable.
 
 ---
 
@@ -110,13 +115,34 @@ Gamma API -> fetch_markets.py -> SQLite -> fetch_prices.py -> SQLite -> calibrat
 
 ### Key Findings
 
-- **9,900+ resolved markets** analyzed across 6 categories (Sports, Other, Weather, Crypto, Politics, AI/Tech)
-- **Overall calibration**: Markets are well-calibrated in aggregate, especially 1h before resolution
-- **Crypto overconfidence: null result** -- initial bias signal (+1%) does not survive bootstrap CI testing (95% CI includes zero), volume weighting, or time-period splits. The original finding was a small-sample artifact.
-- **Politics underconfidence: confirmed** -- political markets are systematically underpriced. Backtest of a contrarian YES strategy (0.40-0.80 range) yields **+20.5% net ROI** after 2% fees (139 trades, 69.1% win rate, 95% CI [+5.9%, +34.4%])
-- **Sports markets**: Well-calibrated across the full probability range
+**No positive research claim from this dataset currently meets the evidentiary standard applied
+in the final review.** The findings below are stated as they resolved, not as they were first
+reported. Full mechanisms and measurements: [docs/CASE_STUDY.md](docs/CASE_STUDY.md).
 
-See `research/ROADMAP.md` for detailed methodology, results tables, and next steps.
+- **9,922 resolved markets** across 6 categories. Note the resolution window is narrow --
+  `closed_at` spans roughly four weeks -- which constrains every analysis below.
+- **Crypto overconfidence: rejected.** A +1% bias signal did not survive bootstrap CI (95% CI
+  includes zero), volume weighting, or monthly splits. A small-sample artifact.
+- **Weather mispricing: rejected as a calibration claim.** An apparent +17pp bias was traced to
+  the analysis itself. Temperature markets are rungs of mutually exclusive ladders, and the
+  `[0.05, 0.95]` price filter discarded the *winning* rung in 65.2% of reconstructed ladders.
+  Removing the filter collapses the effect to +3.9pp, which incomplete ladder representation
+  then accounts for numerically.
+- **Politics underconfidence: not supported.** Originally reported as confirmed, with a
+  contrarian YES strategy returning +20.5%. It fails on three grounds: 69% of the cohort is one
+  narrow speech-event subtype rather than political forecasting questions; the price band was
+  chosen after a wider band missed significance; and contracts share underlying events, so 323
+  rows are not 323 independent observations. The +20.5% figure was also never a backtest -- its
+  entry price was never demonstrated to be executable.
+- **Retracted:** a previously reported 1h pre-resolution cohort of n=2,523 reproduces as n=18,
+  and the original derivation cannot be reconstructed.
+
+The exploratory dataset is frozen, content-hashed and write-protected rather than corrected in
+place, so the analysis that produced the original claims remains inspectable. See
+[research/archive/v1/](research/archive/v1/).
+
+`research/ROADMAP.md` records the original methodology and conclusions as written at the time;
+it has **not** been rewritten, and its claims should be read against the case study.
 
 ---
 
@@ -142,11 +168,11 @@ See `research/ROADMAP.md` for detailed methodology, results tables, and next ste
    - Industry standard (AWS, Stripe, GitHub use this)
    - See: `src/polymarket_arbitrage/api/resilience.py`
 
-4. **Multi-Endpoint Fallback**
-   - Tries multiple API patterns
-   - Graceful degradation
-   - Mirrors real-world API integration
-   - See: `src/polymarket_arbitrage/api/endpoints.py`
+4. **Multi-Endpoint Fallback** -- *built, tested, and not wired in*
+   - `api/endpoints.py` implements ordered fallback across API URL patterns
+   - Nothing imports it outside its own tests: `main.py` hardcodes `/markets`
+   - Listed here as an honest inventory item, not a runtime capability. It is left
+     unreachable rather than wired up to justify the description
 
 ### Code Quality
 
@@ -158,10 +184,14 @@ See `research/ROADMAP.md` for detailed methodology, results tables, and next ste
 
 ### Observability
 
-- **Structured Logging**: JSON logs with context binding (structlog)
-- **Prometheus Metrics**: Golden signals + business metrics
-- **Health Checks**: Kubernetes-ready liveness/readiness probes
-- **Performance Tracking**: P&L, capital utilization, ROI
+- **Structured Logging**: JSON logs with context binding (structlog), correlation ID per cycle
+- **Prometheus Metrics**: business and latency metrics, served at `/metrics` and scraped
+- **Grafana**: provisioned datasource and an 11-panel dashboard, checked into `monitoring/`
+- **Performance Tracking**: capital, realized and unrealized P&L, cycle latency, breaker state
+
+Scoped honestly: the Docker health check is an import smoke test rather than a liveness probe
+of a running detection loop, and the monitoring stack is loopback-bound local development --
+not a production observability setup with alerting or SLOs.
 
 ---
 
@@ -310,7 +340,7 @@ polymarket-research/
 │   │   └── extract_preresolution_prices.py
 │   └── ROADMAP.md                  # Research findings and next steps
 │
-├── tests/                          # Test suite (254 tests, 60% coverage)
+├── tests/                          # Test suite (326 tests, 69% coverage)
 │   ├── conftest.py                 # Shared fixtures
 │   ├── unit/                       # Unit tests
 │   │   ├── test_domain_models.py   # Token, Market, ArbitrageOpportunity (52 tests)
@@ -488,13 +518,23 @@ Fixed window (60 req/min):
 
 ## Testing
 
-### Test Coverage (254 tests, 60%)
+### Test Coverage (326 tests, 69%)
 
-- **Unit Tests**: Domain models, parsers, strategies, execution, API client, resilience patterns, endpoints, metrics, settings
-- **Integration Tests**: End-to-end with mocked API (future)
-- **Property-Based Tests**: Hypothesis for invariants (future)
+- **Unit Tests**: domain models, parsers, strategies, execution and settlement, API client and
+  its resilience boundary, composition-root wiring, metrics, settings, frozen-dataset guards
+- **Integration Tests**: directory exists, no tests written
+- **Property-Based Tests**: directory exists, no tests written (hypothesis is installed)
 
-**Module coverage highlights**: settings 100%, constants 100%, client 86%, models 81%, resilience 77%, metrics 74%, response_models 72%, endpoints 62%, parsers 59%, strategies 55-57%
+**Module coverage**: settings 100%, constants 100%, exceptions 93%, client 88%, models 83%,
+paper_trader 77%, resilience 77%, position_tracker 72%, metrics 72%, response_models 72%,
+endpoints 62%, parsers 59%, base 57%, main 56%, price_discrepancy 55%, logging 31%,
+protocols 0%.
+
+A caveat worth stating on a page that quotes a test count: at 254 passing tests this suite did
+not catch four defects that left the engine unable to fetch a single market. Roughly 33 of the
+326 exercise modules the running application never reaches. Tests here establish that code
+satisfies the contracts it encodes -- not that the right contracts were encoded. See
+[docs/CASE_STUDY.md](docs/CASE_STUDY.md).
 
 ### Running Tests
 
