@@ -186,8 +186,12 @@ class PaperTrader:
         does not have and inflating capacity for subsequent trades.
 
         The bundle *amount* needs no outcome data -- YES + NO redeems for $1 either way.
-        The *timing* is what needs evidence, and this method refuses to guess it. An
-        UNRESOLVED or UNKNOWN status leaves the position open.
+        The *timing* is what needs evidence, and this method refuses to infer it -- an
+        UNRESOLVED or UNKNOWN status leaves the position open. Note the scope of that
+        claim: it holds downstream of whatever adapter produced the status. The adapter
+        itself still contains one documented, unvalidated mapping (see README, Open
+        Assumptions), so the ledger is resolution-gated rather than evidence-gated until
+        that mapping is established.
 
         Obtaining the status is the caller's job. This module has no API dependency, and
         inventing an oracle here would put the same unverified assumption back one layer

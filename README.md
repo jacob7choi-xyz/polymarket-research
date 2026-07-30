@@ -639,6 +639,36 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
+## Open Assumptions
+
+Assumptions the code depends on that have **not** been independently established.
+Recorded here rather than left implicit, because this project's recurring failure mode
+was a plausible-looking field name standing in for a fact nobody had verified.
+
+**Gamma `umaResolutionStatus == "resolved"` is treated as settlement-eligible.**
+Settlement releases capital and realizes P&L on that signal. It is the terminal oracle
+state and the intermediate `"proposed"` state is correctly excluded, so the mapping is
+conservative -- but it has been reasoned about, not demonstrated. Edge cases around
+disputed, void, or negative-risk market structures are uncharacterized. If the mapping is
+wrong in the early direction, the ledger would release capital before positions were
+redeemable, inflating capacity for later trades. That is the same phantom-liquidity class
+already eliminated from the market end date, now at a better-isolated boundary.
+
+The assumption lives in exactly one place, `Application._fetch_resolution_status`.
+Everything downstream consumes a typed `ResolutionStatus` and would be unaffected by
+replacing it with a better-evidenced adapter. Validating it means one premise study
+against known-resolved markets, not an accounting rewrite.
+
+**Related scoping notes:**
+
+| Claim | Status |
+|---|---|
+| Settlement refuses to guess | True downstream of the adapter. The adapter itself contains the one guess above |
+| Request throttling | Boundary-enforced token bucket. The limiter holds its lock across the wait, so callers sharing an instance serialize. Adequate for this workload; not a high-concurrency implementation |
+| Rate-limit handling | 429 is retried with local exponential backoff. `Retry-After` is carried on the exception but not honoured |
+| Gamma outcome prices | Measured to sum to exactly 1.0000 across 343 live markets. Not established to be mid-prices, and not executable ask prices |
+| Paper-trade lifecycle | Implemented, tested, and wired into the detection cycle. Never exercised against live data, because no position opens on a feed whose prices sum to 1 |
+
 ## Acknowledgments
 
 This project demonstrates production-grade patterns learned from:
