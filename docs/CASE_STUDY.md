@@ -457,25 +457,48 @@ That is a worse trading result and a better engineering one.
 
 ## Appendix — provenance of the figures
 
-Two kinds of number appear above, and they do not carry equal weight.
+Not all numbers above carry equal weight, and a document arguing about provenance should
+not claim uniform provenance it does not have. `scripts/reconcile_case_study.py`
+classifies every principal quantitative claim into one of four categories. It verifies the
+dataset's SHA-256 against the freeze manifest before computing anything, so "recomputed
+from frozen evidence" is literally true rather than true-because-the-bytes-happen-to-match.
 
-**Derivable from the frozen dataset.** Twenty-six quoted figures were recomputed from
-`research/archive/v1` in a final reconciliation pass. All twenty-six agree; none mismatch.
-They include every cohort size (9,922 / 368 / 323 / 497 / 18), the full politics decomposition
-(n=223/40/60 with biases -0.0529 / +0.0882 / -0.1259), the headline -0.0490, the crypto null
-(+0.0104, CI [-0.0267, +0.0475]), and the entire Weather ladder analysis (348 ladders, mean
-size 5.17, price sum 0.983, outcome sum 0.782, 227 winner-dropping ladders = 65.2%, +0.1718
-filtered, +0.0390 unfiltered, residual 0.0389). Given the frozen database and the recorded
-seed, these reproduce exactly.
+Current output: **28 reproduced, 0 mismatched, 3 not rerun, 6 historical, 1
+unreconcilable.**
 
-**Recorded from live API probes.** Six figures cannot be re-derived from the frozen dataset,
-because they describe an external service's state at a moment in time: the 343-market
-`YES + NO = 1.0000` characterisation, the 32-market close-lag measurement (median +0.8h, max
-+11.7h), the `negRiskMarketID` filter returning 0 of 25 matching records, `interval=1m`
-returning zero points at five months, the list-versus-single endpoint contradiction on market
-3037521, and the midpoint comparison against a live order book. These were observed once and
-written down. A reader re-running them today may see different values as the feed moves.
+**REPRODUCED (28)** — recomputed from the frozen dataset during a final audit, agreeing to
+quoted precision. Every cohort size (9,922 markets / 2,091,101 price rows / 368 / 323 / 497
+/ 18); the politics decomposition in full (n=223/40/60 with biases −0.0529 / +0.0882 /
+−0.1259, the headline −0.0490, and −0.0238 with the band filter removed); the entire Weather
+ladder analysis (348 ladders, mean size 5.17, price sum 0.983, outcome sum 0.782, 227
+winner-dropping ladders = 65.2%, +0.1718 filtered, +0.0390 unfiltered, residual 0.0389); the
+crypto null (+0.0104 and its bootstrap interval); and the 46.1% look-ahead rate, recomputed
+over the full population of 9,922 rather than a sample.
 
-The distinction matters because this document's argument is about provenance. Claiming every
-figure had been mechanically re-verified would be precisely the kind of unearned strength the
-project spent its length learning to strip out. Twenty-six were. Six were observed.
+One caveat inside this class: bootstrap confidence intervals reproduce to roughly ±0.0008
+rather than exactly, because resampling depends on the order of RNG draws and this script's
+call sequence differs from the original analysis script's. Point estimates and counts
+reproduce exactly.
+
+**NOT_RERUN (3)** — derivable from the frozen dataset, but not recomputed by this audit: the
++20.5% return calculation (reproducible via `research/analysis/backtest_politics.py`), the
+causal re-extraction estimate −0.0495, and the politics subgroup confidence intervals.
+"This script did not compute it" is not the same as "it cannot be computed," and conflating
+those two was an earlier version of this appendix's own error.
+
+**HISTORICAL (6)** — depended on an external service's state at a moment in time and cannot
+be regenerated: the 343-market `YES + NO = 1.0000` characterisation, the 32-market close-lag
+sample (median +0.8h, max +11.7h), the `negRiskMarketID` filter returning 0 of 25 matching
+records, `interval=1m` returning zero points at five months, the list-versus-single endpoint
+contradiction on market 3037521, and the CLOB midpoint comparison. A reader re-running these
+today may see different values as the feed moves.
+
+Their durability is genuinely weaker than the frozen corpus, and worth admitting plainly.
+Most are recorded in commit messages (`170902c`, `637b819`, `a2ae4b9`) alongside the code
+change each one motivated, which is a durable record but not a hashed artifact. Raw payloads
+were not archived. A stricter version of this project would have captured them.
+
+**UNRECONCILABLE (1)** — the ROADMAP's 1h cohort of n=2,523. The current dataset yields 18,
+and the original derivation cannot be reconstructed. This is the one figure whose provenance
+is insufficient to explain the discrepancy, which is precisely why it is retracted rather
+than corrected.
