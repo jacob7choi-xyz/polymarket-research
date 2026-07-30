@@ -87,10 +87,13 @@ class Application:
         Initialize application components.
 
         Order matters:
-        1. Core infrastructure (logging, metrics)
-        2. External dependencies (API client)
+        1. Local infrastructure (position tracking, execution)
+        2. Resilience references from the injected client
         3. Business logic (strategy)
-        4. Execution layer (trader)
+
+        Logging and the metrics endpoint are process-global and are started by the entry
+        point, not here. Binding a port is not per-instance state: this method runs once
+        per Application, and a test suite constructing several would collide on the port.
 
         The API client is injected by the caller, which owns its lifecycle via
         `async with`. Building one here would discard the entered client and
@@ -126,10 +129,7 @@ class Application:
         # - Easy to understand, debug, test
         # - No framework lock-in
 
-        # Layer 1: Infrastructure. The metrics registry is populated by every layer below,
-        # but nothing served it until now, so Prometheus scrapes reported the target DOWN.
-        start_metrics_server(self.settings.metrics_port)
-
+        # Layer 1: Infrastructure
         self.position_tracker = PositionTracker()
         self.paper_trader = PaperTrader(
             initial_capital=self.settings.initial_capital_usd,
@@ -634,11 +634,13 @@ async def async_main() -> None:
     # Load and validate configuration
     settings = get_settings()
 
-    # Configure logging
+    # Process-global setup: both of these are started once per process, never per
+    # Application instance
     configure_logging(
         log_level=settings.log_level,
         json_logs=settings.json_logs,
     )
+    start_metrics_server(settings.metrics_port)
 
     # Create application
     app = Application(settings)
