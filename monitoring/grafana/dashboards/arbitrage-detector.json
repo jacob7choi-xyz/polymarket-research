@@ -1,17 +1,29 @@
 {
   "uid": "polymarket-arbitrage",
   "title": "Polymarket Arbitrage Detector",
-  "tags": ["polymarket", "arbitrage", "paper-trading"],
+  "tags": [
+    "polymarket",
+    "arbitrage",
+    "paper-trading"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "panels": [
     {
       "type": "row",
       "title": "Capital",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "collapsed": false,
       "panels": []
     },
@@ -19,17 +31,42 @@
       "type": "stat",
       "title": "Available capital",
       "description": "Cash not currently deployed in open positions.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
       "targets": [
-        { "refId": "A", "expr": "available_capital_usd", "legendFormat": "available" }
+        {
+          "refId": "A",
+          "expr": "available_capital_usd",
+          "legendFormat": "available"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "currencyUSD", "decimals": 2, "color": { "mode": "fixed", "fixedColor": "text" } },
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "graphMode": "area"
       }
@@ -38,17 +75,38 @@
       "type": "stat",
       "title": "Capital deployed",
       "description": "Sum of open position cost bases. Excludes realized gains -- see the ledger reconciliation invariant.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
       "targets": [
-        { "refId": "A", "expr": "capital_deployed_usd", "legendFormat": "deployed" }
+        {
+          "refId": "A",
+          "expr": "capital_deployed_usd",
+          "legendFormat": "deployed"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "currencyUSD", "decimals": 2 },
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "graphMode": "area"
       }
     },
@@ -56,9 +114,23 @@
       "type": "stat",
       "title": "Total P&L",
       "description": "Realized plus unrealized. Unrealized is entry-time expected profit, not marked to market.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
-      "targets": [{ "refId": "A", "expr": "total_pnl_usd", "legendFormat": "total" }],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "total_pnl_usd",
+          "legendFormat": "total"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
@@ -66,15 +138,27 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 0 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "value",
         "graphMode": "area"
       }
@@ -82,69 +166,162 @@
     {
       "type": "stat",
       "title": "Open positions",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
-      "targets": [{ "refId": "A", "expr": "open_positions", "legendFormat": "open" }],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "open_positions",
+          "legendFormat": "open"
+        }
+      ],
       "fieldConfig": {
-        "defaults": { "unit": "short", "decimals": 0 },
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "graphMode": "none"
       }
     },
     {
       "type": "timeseries",
       "title": "P&L over time",
-      "description": "Realized P&L only moves when a position settles on confirmed resolution.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "description": "Realized P&L moves only after the resolution adapter returns RESOLVED. That adapter's mapping from Gamma's oracle status to redeemability is documented as an open assumption, so this is not proof of confirmed on-chain resolution.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
       "targets": [
-        { "refId": "A", "expr": "realized_pnl_usd", "legendFormat": "realized" },
-        { "refId": "B", "expr": "unrealized_pnl_usd", "legendFormat": "unrealized" },
-        { "refId": "C", "expr": "total_pnl_usd", "legendFormat": "total" }
+        {
+          "refId": "A",
+          "expr": "realized_pnl_usd",
+          "legendFormat": "realized"
+        },
+        {
+          "refId": "B",
+          "expr": "unrealized_pnl_usd",
+          "legendFormat": "unrealized"
+        },
+        {
+          "refId": "C",
+          "expr": "total_pnl_usd",
+          "legendFormat": "total"
+        }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
-          "custom": { "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" }
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
         },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     },
     {
       "type": "timeseries",
       "title": "Capital allocation",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
       "targets": [
-        { "refId": "A", "expr": "available_capital_usd", "legendFormat": "available" },
-        { "refId": "B", "expr": "capital_deployed_usd", "legendFormat": "deployed" }
+        {
+          "refId": "A",
+          "expr": "available_capital_usd",
+          "legendFormat": "available"
+        },
+        {
+          "refId": "B",
+          "expr": "capital_deployed_usd",
+          "legendFormat": "deployed"
+        }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
-          "custom": { "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal" }, "showPoints": "never" }
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "stacking": {
+              "mode": "normal"
+            },
+            "showPoints": "never"
+          }
         },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     },
     {
       "type": "row",
       "title": "Detection",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
       "collapsed": false,
       "panels": []
     },
     {
       "type": "timeseries",
       "title": "Opportunities detected",
-      "description": "Expect a flat zero against Gamma: across 343 sampled live markets, YES + NO summed to exactly 1.0000, so the detection condition is unreachable from that feed.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
+      "description": "The measured 343-market live sample produced YES + NO = 1.0000 for every market, so this panel was expected to remain zero under the observed feed behaviour. It is not a timeless invariant about all future Gamma markets.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 15
+      },
       "targets": [
         {
           "refId": "A",
@@ -153,16 +330,35 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "showPoints": "never" } },
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     },
     {
       "type": "timeseries",
       "title": "Trades executed",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 15 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 15
+      },
       "targets": [
         {
           "refId": "A",
@@ -171,17 +367,36 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "showPoints": "never" } },
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     },
     {
       "type": "timeseries",
       "title": "Detection cycle duration",
       "description": "Includes settlement checks, paginated market fetch, and strategy evaluation.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 15 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
       "targets": [
         {
           "refId": "A",
@@ -195,15 +410,31 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "s", "custom": { "lineWidth": 2, "showPoints": "never" } },
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     },
     {
       "type": "row",
       "title": "Dependency health",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
       "collapsed": false,
       "panels": []
     },
@@ -211,8 +442,16 @@
       "type": "stat",
       "title": "Circuit breaker",
       "description": "Counts dependency faults only. A deterministic 4xx -- including Gamma's routine 422 at its pagination ceiling -- does not increment it.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 24 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 24
+      },
       "targets": [
         {
           "refId": "A",
@@ -226,10 +465,26 @@
             {
               "type": "value",
               "options": {
-                "0": { "text": "CLOSED", "color": "green", "index": 0 },
-                "1": { "text": "HALF_OPEN", "color": "orange", "index": 1 },
-                "2": { "text": "OPEN", "color": "red", "index": 2 },
-                "-1": { "text": "UNKNOWN", "color": "purple", "index": 3 }
+                "0": {
+                  "text": "CLOSED",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "HALF_OPEN",
+                  "color": "orange",
+                  "index": 1
+                },
+                "2": {
+                  "text": "OPEN",
+                  "color": "red",
+                  "index": 2
+                },
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "purple",
+                  "index": 3
+                }
               }
             }
           ]
@@ -237,7 +492,13 @@
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "background",
         "graphMode": "none"
       }
@@ -246,8 +507,16 @@
       "type": "timeseries",
       "title": "Arbitrage profit per dollar (observed)",
       "description": "Histogram of detected spreads. Empty when no opportunity qualifies.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 24 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 16,
+        "x": 8,
+        "y": 24
+      },
       "targets": [
         {
           "refId": "A",
@@ -261,10 +530,20 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "lineWidth": 2, "showPoints": "never" } },
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     }
   ]
 }

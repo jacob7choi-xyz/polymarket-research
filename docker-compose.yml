@@ -30,7 +30,10 @@ services:
       # Mount config for easy editing
       - ./config:/app/config:ro
     ports:
-      - "9090:9090"  # Prometheus metrics
+      # Loopback only. Inter-container traffic uses the compose network
+      # (prometheus scrapes arbitrage-detector:9090), so binding to 127.0.0.1
+      # costs nothing and keeps the metrics endpoint off the LAN.
+      - "127.0.0.1:9090:9090"  # app /metrics
     networks:
       - arbitrage-net
     labels:
@@ -39,7 +42,9 @@ services:
 
   # Prometheus for metrics collection
   prometheus:
-    image: prom/prometheus:latest
+    # Pinned by digest: `latest` is mutable, so a compromised or merely changed
+    # upstream tag would land in this stack without a reviewed commit.
+    image: prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
     container_name: prometheus
     restart: unless-stopped
     command:
@@ -51,7 +56,7 @@ services:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     ports:
-      - "9091:9090"  # Prometheus UI
+      - "127.0.0.1:9091:9090"  # Prometheus UI
     networks:
       - arbitrage-net
     depends_on:
@@ -59,19 +64,25 @@ services:
 
   # Grafana for dashboards
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana@sha256:1c1bd67c54c5fcf6e759897852b5a584191bd6796e8d328a5ace457799801261
     container_name: grafana
     restart: unless-stopped
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      # Sourced from the environment, never committed. The `:?` form makes compose
+      # fail loudly if unset rather than silently falling back to admin/admin.
+      # NOTE: Grafana applies these only when initialising a fresh database. If the
+      # grafana-data volume already exists, changing them here has no effect and the old
+      # credential keeps working -- verified: setting them on an existing volume left
+      # admin/admin accepted. Run `docker compose down -v` when rotating.
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:?set GRAFANA_ADMIN_USER in .env}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
     ports:
-      - "3000:3000"  # Grafana UI
+      - "127.0.0.1:3000:3000"  # Grafana UI
     networks:
       - arbitrage-net
     depends_on:
