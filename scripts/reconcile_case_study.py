@@ -6,13 +6,23 @@ true-because-the-bytes-happen-to-match.
 
 Claims are classified, not lumped together:
 
-    REPRODUCED      recomputed here from the frozen dataset, agrees to quoted precision
-    NOT_RERUN       derivable from the frozen dataset but not recomputed by this script
-    HISTORICAL      depended on live external API state; cannot be regenerated
-    UNRECONCILABLE  provenance insufficient to reconstruct the original derivation
+    REPRODUCED       recomputed here, agrees to the quoted precision
+    CONSISTENT_RERUN recomputed here, materially consistent but not numerically identical
+    NOT_RERUN        derivable from the frozen dataset but not recomputed by this script
+    HISTORICAL       depended on live external API state; cannot be regenerated
+    UNRECONCILABLE   provenance insufficient to reconstruct the original derivation
 
-The distinction between NOT_RERUN and HISTORICAL matters: "this script did not compute
-it" is not the same as "it cannot be computed."
+Two distinctions this taxonomy exists to preserve.
+
+"This script did not compute it" is not the same as "it cannot be computed", which is why
+NOT_RERUN and HISTORICAL are separate.
+
+And a stochastic estimate that lands nearby is not an exact reproduction. A seed does not
+define an analysis: reproducing a bootstrap interval also requires the same row order, RNG
+implementation, and -- critically -- the same number and order of random draws. This script's
+call sequence differs from the original analysis scripts, so its intervals are a consistency
+check rather than a reproduction. Filing them as REPRODUCED under a definition that says
+"agrees to the quoted precision" would be false, since -0.026178 does not round to -0.0267.
 
 Usage (from the project root):
     python scripts/reconcile_case_study.py
@@ -38,6 +48,7 @@ BOOTSTRAP_ITERATIONS = 10_000
 SEED = 42
 
 REPRODUCED = "REPRODUCED"
+CONSISTENT_RERUN = "CONSISTENT_RERUN"
 NOT_RERUN = "NOT_RERUN"
 HISTORICAL = "HISTORICAL"
 UNRECONCILABLE = "UNRECONCILABLE"
@@ -60,6 +71,19 @@ def reproduced(claim: str, quoted: float | int, computed: float | int, tol: floa
         REPRODUCED if ok else "MISMATCH",
         claim,
         f"quoted {quoted} / computed {computed}",
+    )
+
+
+def consistent(claim: str, quoted: float, computed: float, tol: float) -> None:
+    """Record a stochastic estimate that should land nearby but need not be identical.
+
+    Uses a deliberately wider tolerance than `reproduced`, and says so in the status, so a
+    reader is never told an interval was reproduced when it was only corroborated.
+    """
+    record(
+        CONSISTENT_RERUN if abs(quoted - computed) <= tol else "MISMATCH",
+        claim,
+        f"quoted {quoted} / computed {computed} (stochastic; within +/-{tol})",
     )
 
 
@@ -233,8 +257,8 @@ def main() -> int:
     boot = [
         rng.choice(crypto, len(crypto), replace=True).mean() for _ in range(BOOTSTRAP_ITERATIONS)
     ]
-    reproduced("crypto CI lower bound", -0.0267, float(np.percentile(boot, 2.5)), tol=0.002)
-    reproduced("crypto CI upper bound", 0.0475, float(np.percentile(boot, 97.5)), tol=0.002)
+    consistent("crypto CI lower bound", -0.0267, float(np.percentile(boot, 2.5)), tol=0.002)
+    consistent("crypto CI upper bound", 0.0475, float(np.percentile(boot, 97.5)), tol=0.002)
 
     # ---- look-ahead audit: full population, deterministic order ----
     market_rows = conn.execute(
@@ -283,25 +307,28 @@ def main() -> int:
     for claim, note in (
         (
             "343 live markets, YES+NO = 1.0000",
-            "live Gamma sample; recorded in commit 170902c era probes",
+            "live Gamma sample; observed near 170902c, payload not archived",
         ),
         (
             "close lag median +0.8h, max +11.7h (n=32)",
-            "live Gamma sample; recorded in commit a2ae4b9",
+            "live Gamma sample; result in the a2ae4b9 commit message, payload not archived",
         ),
         (
             "negRiskMarketID filter returns 0 of 25 matching",
-            "live Gamma probe; recorded in commit 637b819 era",
+            "live Gamma probe; observed near 637b819, payload not archived",
         ),
         (
             "interval=1m returns 0 points at ~5 months",
-            "live CLOB probe; recorded in commit a2ae4b9",
+            "live CLOB probe; result in the a2ae4b9 commit message, payload not archived",
         ),
         (
             "list vs single endpoint contradiction (market 3037521)",
-            "live Gamma probe; recorded in commit a2ae4b9",
+            "live Gamma probe; both values in the a2ae4b9 commit message, payloads not archived",
         ),
-        ("CLOB /prices-history matched book midpoint", "live CLOB probe on a tight-spread market"),
+        (
+            "CLOB /prices-history matched book midpoint",
+            "live CLOB probe, tight-spread market; payload not archived",
+        ),
     ):
         record(HISTORICAL, claim, note)
     record(
@@ -312,7 +339,7 @@ def main() -> int:
 
     width = max(len(c) for _, c, _ in rows_out) + 2
     for status, claim, detail in rows_out:
-        print(f"  {status:<15}{claim:<{width}}{detail}")
+        print(f"  {status:<17}{claim:<{width}}{detail}")
 
     counts = {s: sum(1 for st, _, _ in rows_out if st == s) for s in {st for st, _, _ in rows_out}}
     print("\n  " + " | ".join(f"{k}: {v}" for k, v in sorted(counts.items())))

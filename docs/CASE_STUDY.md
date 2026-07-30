@@ -457,48 +457,54 @@ That is a worse trading result and a better engineering one.
 
 ## Appendix — provenance of the figures
 
-Not all numbers above carry equal weight, and a document arguing about provenance should
-not claim uniform provenance it does not have. `scripts/reconcile_case_study.py`
-classifies every principal quantitative claim into one of four categories. It verifies the
-dataset's SHA-256 against the freeze manifest before computing anything, so "recomputed
-from frozen evidence" is literally true rather than true-because-the-bytes-happen-to-match.
+Not all numbers above carry equal weight, and a document arguing about provenance should not
+claim uniform provenance it does not have. `scripts/reconcile_case_study.py` classifies every
+principal quantitative claim into one of five categories, and refuses to run at all unless the
+dataset's SHA-256 matches the freeze manifest — so "recomputed from frozen evidence" is
+verified rather than assumed. Both guards were tested by breaking them deliberately: an
+injected wrong value produces `MISMATCH` and exit code 1, and a single edited row in a copied
+database causes the script to refuse before computing anything.
 
-Current output: **28 reproduced, 0 mismatched, 3 not rerun, 6 historical, 1
-unreconcilable.**
+Current output: **26 reproduced, 2 consistent reruns, 3 not rerun, 6 historical, 1
+unreconcilable, 0 mismatched.**
 
-**REPRODUCED (28)** — recomputed from the frozen dataset during a final audit, agreeing to
-quoted precision. Every cohort size (9,922 markets / 2,091,101 price rows / 368 / 323 / 497
-/ 18); the politics decomposition in full (n=223/40/60 with biases −0.0529 / +0.0882 /
-−0.1259, the headline −0.0490, and −0.0238 with the band filter removed); the entire Weather
-ladder analysis (348 ladders, mean size 5.17, price sum 0.983, outcome sum 0.782, 227
-winner-dropping ladders = 65.2%, +0.1718 filtered, +0.0390 unfiltered, residual 0.0389); the
-crypto null (+0.0104 and its bootstrap interval); and the 46.1% look-ahead rate, recomputed
-over the full population of 9,922 rather than a sample.
+**REPRODUCED (26)** — recomputed from the frozen dataset, agreeing to the quoted precision.
+Every cohort size (9,922 markets / 2,091,101 price rows / 368 / 323 / 497 / 18); the politics
+decomposition in full (n=223/40/60 with biases −0.0529 / +0.0882 / −0.1259, the headline
+−0.0490, and −0.0238 with the band filter removed); the entire Weather ladder analysis (348
+ladders, mean size 5.17, price sum 0.983, outcome sum 0.782, 227 winner-dropping ladders =
+65.2%, +0.1718 filtered, +0.0390 unfiltered, residual 0.0389); the crypto point estimate
++0.0104; and the 46.1% look-ahead rate, recomputed over the full population of 9,922 with a
+deterministic row order rather than a sample.
 
-One caveat inside this class: bootstrap confidence intervals reproduce to roughly ±0.0008
-rather than exactly, because resampling depends on the order of RNG draws and this script's
-call sequence differs from the original analysis script's. Point estimates and counts
-reproduce exactly.
+**CONSISTENT_RERUN (2)** — the crypto bootstrap interval bounds. Recomputed here they land at
+−0.0262 and +0.0468 against quoted −0.0267 and +0.0475: materially consistent, not identical.
+A seed does not define an analysis. Reproducing a bootstrap interval also requires the same
+row order, RNG implementation, and the same number and order of random draws — and this
+script's call sequence differs from the original analysis script's. Filing these as reproduced
+under a definition reading "agrees to the quoted precision" would be false, since −0.026178
+does not round to −0.0267. They are corroboration, not reproduction.
 
 **NOT_RERUN (3)** — derivable from the frozen dataset, but not recomputed by this audit: the
 +20.5% return calculation (reproducible via `research/analysis/backtest_politics.py`), the
-causal re-extraction estimate −0.0495, and the politics subgroup confidence intervals.
-"This script did not compute it" is not the same as "it cannot be computed," and conflating
-those two was an earlier version of this appendix's own error.
+causal re-extraction estimate −0.0495, and the politics subgroup confidence intervals. "This
+script did not compute it" is not the same as "it cannot be computed," and conflating those
+two was an earlier version of this appendix's own error.
 
-**HISTORICAL (6)** — depended on an external service's state at a moment in time and cannot
-be regenerated: the 343-market `YES + NO = 1.0000` characterisation, the 32-market close-lag
+**HISTORICAL (6)** — depended on an external service's state at a moment in time and cannot be
+regenerated: the 343-market `YES + NO = 1.0000` characterisation, the 32-market close-lag
 sample (median +0.8h, max +11.7h), the `negRiskMarketID` filter returning 0 of 25 matching
 records, `interval=1m` returning zero points at five months, the list-versus-single endpoint
 contradiction on market 3037521, and the CLOB midpoint comparison. A reader re-running these
 today may see different values as the feed moves.
 
-Their durability is genuinely weaker than the frozen corpus, and worth admitting plainly.
-Most are recorded in commit messages (`170902c`, `637b819`, `a2ae4b9`) alongside the code
-change each one motivated, which is a durable record but not a hashed artifact. Raw payloads
-were not archived. A stricter version of this project would have captured them.
+Their durability is genuinely weaker than the frozen corpus, and worth stating plainly. Some
+have their results quoted in the commit message of the change they motivated (`a2ae4b9`);
+others were observed during work leading to a commit without the figure itself being recorded
+there. **No raw response payloads were archived.** A stricter version of this project would
+have captured them, and that is a real gap rather than a stylistic preference.
 
 **UNRECONCILABLE (1)** — the ROADMAP's 1h cohort of n=2,523. The current dataset yields 18,
 and the original derivation cannot be reconstructed. This is the one figure whose provenance
-is insufficient to explain the discrepancy, which is precisely why it is retracted rather
-than corrected.
+is insufficient to explain the discrepancy, which is precisely why it is retracted rather than
+corrected.
