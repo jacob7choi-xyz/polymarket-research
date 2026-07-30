@@ -14,7 +14,6 @@ Interview Point - Testing Stateful Components:
 - Test metrics accuracy
 """
 
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -245,7 +244,6 @@ class TestSettlement:
             bundle_quantity=Decimal("100"),
             yes_price=Decimal("0.48"),
             no_price=Decimal("0.48"),
-            market_end_at=datetime(2020, 1, 1, tzinfo=UTC),  # long past, must not matter
         )
         trader.available_capital -= Decimal("96")
 
@@ -305,6 +303,64 @@ class TestSettlement:
         """Resolution evidence for a market we hold no position in changes nothing."""
         assert trader.settle_position("0xnothing", ResolutionStatus.RESOLVED) is False
         assert trader.available_capital == Decimal("10000")
+
+    def test_settlement_is_idempotent(self, trader: PaperTrader) -> None:
+        """Settling twice must not credit capital or P&L twice.
+
+        Double-crediting is the most direct money-accounting failure a settlement path
+        can have, so it gets an explicit test rather than relying on the position lookup
+        happening to return None the second time.
+        """
+        self._open(trader, "0xonce")
+
+        assert trader.settle_position("0xonce", ResolutionStatus.RESOLVED) is True
+        capital_after_first = trader.available_capital
+        pnl_after_first = trader.position_tracker.total_realized_pnl
+        closed_after_first = trader.position_tracker.closed_positions_count
+
+        assert trader.settle_position("0xonce", ResolutionStatus.RESOLVED) is False
+        assert trader.available_capital == capital_after_first
+        assert trader.position_tracker.total_realized_pnl == pnl_after_first
+        assert trader.position_tracker.closed_positions_count == closed_after_first
+
+    def test_capital_conservation_invariant_exact(self, trader: PaperTrader) -> None:
+        """available + open cost basis - realized == initial, in exact Decimal.
+
+        Asserted on the Decimal attributes rather than the summary dict, which converts
+        to float for Prometheus. A conservation invariant checked through float would not
+        detect the drift it exists to catch.
+        """
+        for mid in ("0xa", "0xb", "0xc"):
+            self._open(trader, mid)
+        trader.settle_positions({"0xa": ResolutionStatus.RESOLVED})
+
+        open_cost = sum(
+            (p.total_cost for p in trader.position_tracker.get_open_positions()),
+            Decimal("0"),
+        )
+        reconciled = (
+            trader.available_capital + open_cost - trader.position_tracker.total_realized_pnl
+        )
+        assert reconciled == trader.initial_capital
+        assert isinstance(reconciled, Decimal)
+
+    def test_unit_arithmetic_is_dimensionally_coherent(self, trader: PaperTrader) -> None:
+        """bundle_quantity is a count; cost and payout are dollars.
+
+        Uses asymmetric prices so a transposed multiplication cannot pass by symmetry.
+        """
+        trader.position_tracker.add_position(
+            market_id="0xunits",
+            bundle_quantity=Decimal("100"),
+            yes_price=Decimal("0.47"),
+            no_price=Decimal("0.49"),
+        )
+        position = trader.position_tracker.get_position("0xunits")
+        assert position is not None
+
+        assert position.total_cost == Decimal("96.00")  # 100 bundles x $0.96
+        assert position.payout == Decimal("100")  # 100 bundles x $1
+        assert position.expected_profit == Decimal("4.00")
 
     def test_capital_conservation_invariant(self, trader: PaperTrader) -> None:
         """available + deployed - realized must always equal initial capital."""

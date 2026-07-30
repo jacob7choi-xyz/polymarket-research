@@ -10,7 +10,7 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
-from polymarket_arbitrage.api.client import PolymarketClient
+from polymarket_arbitrage.api.client import DEPENDENCY_FAULTS, PolymarketClient
 from polymarket_arbitrage.api.resilience import (
     CircuitBreaker,
     CircuitBreakerState,
@@ -498,3 +498,67 @@ class TestResilienceIsApplied:
                 await client.get_json("/markets")
             # Rejected without touching the network
             assert len(httpx_mock.get_requests()) == sent_before
+
+    @pytest.mark.asyncio
+    async def test_client_error_does_not_count_toward_breaker(self, httpx_mock: HTTPXMock) -> None:
+        """A deterministic 4xx is a rejected request, not an unhealthy dependency.
+
+        Gamma returns HTTP 422 at its pagination ceiling on every cycle. Counting that as
+        a breaker failure was previously harmless only because a later success reset the
+        counter first -- accidental safety rather than design. With a threshold of 2, five
+        deterministic 422s must leave the breaker closed.
+        """
+        breaker = CircuitBreaker(
+            failure_threshold=2,
+            recovery_timeout=60.0,
+            expected_exception=DEPENDENCY_FAULTS,
+        )
+        httpx_mock.add_response(
+            status_code=422, json={"error": "offset too large"}, is_reusable=True
+        )
+        async with PolymarketClient(circuit_breaker=breaker) as client:
+            for _ in range(5):
+                with pytest.raises(APIError):
+                    await client.get_json("/markets")
+
+        assert breaker.state is CircuitBreakerState.CLOSED
+        assert breaker.failure_count == 0
+
+    @pytest.mark.asyncio
+    async def test_dependency_fault_does_count_toward_breaker(self, httpx_mock: HTTPXMock) -> None:
+        """Connection failures are exactly what the breaker is for."""
+        breaker = CircuitBreaker(
+            failure_threshold=2,
+            recovery_timeout=60.0,
+            expected_exception=DEPENDENCY_FAULTS,
+        )
+        httpx_mock.add_exception(httpx.ConnectError("down"), is_reusable=True)
+        async with PolymarketClient(circuit_breaker=breaker) as client:
+            for _ in range(2):
+                with pytest.raises(DomainConnectionError):
+                    await client.get_json("/markets")
+
+        assert breaker.state is CircuitBreakerState.OPEN
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_is_retryable_but_not_a_breaker_fault(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """429 means throttled, not down. Retryability and breaker-worthiness differ.
+
+        Opening the circuit on throttling would convert back-pressure into an outage.
+        """
+        breaker = CircuitBreaker(
+            failure_threshold=2,
+            recovery_timeout=60.0,
+            expected_exception=DEPENDENCY_FAULTS,
+        )
+        httpx_mock.add_response(status_code=429, json={"error": "slow down"}, is_reusable=True)
+        async with PolymarketClient(
+            circuit_breaker=breaker, retry_max_attempts=2, retry_base_delay=0.01
+        ) as client:
+            for _ in range(3):
+                with pytest.raises(RateLimitError):
+                    await client.get_json("/markets")
+
+        assert breaker.state is CircuitBreakerState.CLOSED

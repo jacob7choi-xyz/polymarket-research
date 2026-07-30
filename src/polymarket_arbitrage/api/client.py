@@ -46,6 +46,11 @@ RETRYABLE_ERRORS: tuple[type[Exception], ...] = (
 #
 # Gamma's routine HTTP 422 at its pagination ceiling is exactly this case. Relying on a
 # later success to reset the counter first would be accidental safety, not design.
+#
+# Retryability and breaker-worthiness are separate axes, and 429 is the case that proves
+# it: it is retryable (the request may succeed once we slow down) but deliberately not a
+# breaker fault, because a throttling service is reachable and healthy. Opening the
+# circuit on throttling would convert back-pressure into an outage.
 DEPENDENCY_FAULTS: tuple[type[Exception], ...] = (
     TimeoutError,
     ConnectionError,

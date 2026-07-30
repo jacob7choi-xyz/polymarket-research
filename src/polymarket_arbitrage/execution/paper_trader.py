@@ -146,7 +146,6 @@ class PaperTrader:
             yes_price=market.yes_token.price,
             no_price=market.no_token.price,
             entry_time=opportunity.detected_at,
-            market_end_at=market.end_date,
         )
 
         # Log execution
@@ -180,9 +179,9 @@ class PaperTrader:
         """Settle one position, but only on evidence that its market actually resolved.
 
         Settlement requires ``ResolutionStatus.RESOLVED`` and nothing weaker. A market's
-        end date will not do: measured against the live API, 100% of markets close
-        *after* their end date, median 0.8 hours later and up to 11.7 hours in a
-        32-market sample. Settling on the end date would credit capital and realize P&L
+        end date will not do: in a 32-market sample of recently closed markets, every
+        observed close occurred *after* the scheduled end date -- median 0.8 hours later,
+        up to 11.7 hours. Settling on the end date would credit capital and realize P&L
         while the position was still unredeemable, manufacturing capital the portfolio
         does not have and inflating capacity for subsequent trades.
 

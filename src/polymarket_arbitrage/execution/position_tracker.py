@@ -40,11 +40,12 @@ class Position:
     yes_price: Decimal  # Price paid for YES token
     no_price: Decimal  # Price paid for NO token
     entry_time: datetime
-    # When the market becomes *eligible* for resolution. Informational only: it is not
-    # when the market resolves, and must never drive settlement. Measured against the
-    # live API, 100% of markets close after this timestamp (median +0.8h, max +11.7h).
-    market_end_at: datetime | None = None
     total_cost: Decimal = field(init=False)
+
+    # Deliberately no market end date. An earlier version carried one, and its presence
+    # is what invited settling on a clock. Market already owns its end date; duplicating
+    # a lifecycle timestamp here served no accounting purpose and only offered a future
+    # reader something to infer resolution from again.
 
     def __post_init__(self) -> None:
         """
@@ -117,7 +118,6 @@ class PositionTracker:
         yes_price: Decimal,
         no_price: Decimal,
         entry_time: datetime | None = None,
-        market_end_at: datetime | None = None,
     ) -> None:
         """
         Add new position.
@@ -128,7 +128,6 @@ class PositionTracker:
             yes_price: Price paid for YES token
             no_price: Price paid for NO token
             entry_time: When position was opened (defaults to now)
-            market_end_at: When the market becomes eligible for resolution (informational)
 
         Raises:
             ValueError: If a position is already open for this market. Overwriting would
@@ -149,7 +148,6 @@ class PositionTracker:
             yes_price=yes_price,
             no_price=no_price,
             entry_time=entry_time,
-            market_end_at=market_end_at,
         )
 
         self.positions[market_id] = position

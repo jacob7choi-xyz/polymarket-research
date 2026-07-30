@@ -141,13 +141,14 @@ class Market(BaseModel):
         1. Buy YES token for $0.48
         2. Buy NO token for $0.48
         3. Total cost: $0.96
-        4. Guaranteed payout: $1.00 (one outcome will win)
-        5. Profit: $1.00 - $0.96 = $0.04 (4% ROI)
+        4. Terminal payout: $1.00 (one outcome will win)
+        5. Profit: $1.00 - $0.96 = $0.04
 
-        Interview Point: Why this is risk-free arbitrage
-        - Guaranteed outcome: One of YES/NO must win
-        - No market risk: Don't care which outcome wins
-        - Execution risk: Only risk is failure to execute
+        Deterministic terminal payoff under the paper model -- not risk-free. The model
+        assumes matched quantities of genuinely complementary claims, both legs filled
+        without legging risk, ordinary (non-void) resolution, and no costs beyond those
+        priced in. These prices are also Gamma mid-prices, which are not executable: a
+        real entry crosses the ask on both legs.
         """
         return self.is_arbitrage_at(ARBITRAGE_THRESHOLD)
 
@@ -239,14 +240,18 @@ class Market(BaseModel):
 class ResolutionStatus(StrEnum):
     """Whether a market has actually resolved and become redeemable.
 
-    A market's end date is not its resolution. Measured against the live API, 100% of
-    markets close *after* their `endDate` -- median 0.8 hours later, up to 11.7 hours in
-    a 32-market sample. Treating the end date as resolution credits capital and realizes
-    P&L before the position is redeemable, which manufactures capital the portfolio does
-    not have.
+    A market's end date is not its resolution. In a 32-market sample of recently closed
+    markets whose end dates had already passed, every observed `closedTime` fell *after*
+    its `endDate` -- median 0.8 hours later, maximum 11.7 hours. That sample was selected
+    by querying closed markets, so it does not characterise all markets; it is sufficient
+    to falsify `endDate == settlement time`, which is all it is used for here. Treating
+    the end date as resolution credits capital and realizes P&L before the position is
+    redeemable, manufacturing capital the portfolio does not have.
 
-    UNKNOWN exists so an unavailable or unrecognised upstream status cannot be silently
-    read as either state. Settlement requires RESOLVED specifically.
+    UNRESOLVED means an authoritative observation says the market has not resolved.
+    UNKNOWN means no adequate observation was available. They are deliberately distinct:
+    collapsing them would hide an unreachable upstream behind a confident-looking answer.
+    Settlement requires RESOLVED specifically.
     """
 
     RESOLVED = "RESOLVED"
