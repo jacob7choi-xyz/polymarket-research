@@ -19,7 +19,7 @@ from functools import wraps
 import time
 from typing import Any, TypeVar
 
-from prometheus_client import Counter, Gauge, Histogram, Info
+from prometheus_client import Counter, Gauge, Histogram, Info, start_http_server
 
 from ..monitoring.logging import get_logger
 
@@ -122,6 +122,25 @@ APP_INFO.info(
 # ============================================================================
 # Metric Decorators
 # ============================================================================
+
+
+def start_metrics_server(port: int) -> None:
+    """Expose the metrics registry over HTTP so Prometheus can scrape it.
+
+    Without this the metrics are recorded in-process and never leave it: every counter and
+    gauge below updates correctly, no endpoint serves them, and a Prometheus scrape target
+    pointed at this process reports DOWN. Recording a metric and publishing it are separate
+    steps, and only the first was previously wired.
+
+    prometheus_client serves on a daemon thread, so this does not block the event loop and
+    does not need awaiting.
+
+    Args:
+        port: TCP port for the /metrics endpoint. Must match the scrape target in
+            monitoring/prometheus.yml.
+    """
+    start_http_server(port)
+    logger.info("metrics_server_started", port=port, endpoint=f"http://0.0.0.0:{port}/metrics")
 
 
 def track_detection_cycle(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:

@@ -19,8 +19,12 @@ COPY pyproject.toml uv.lock ./
 # Install production dependencies only
 RUN uv sync --no-dev --frozen --no-install-project
 
-# Copy source and install the project itself
+# Copy source and install the project itself.
+# README.md is required, not decorative: pyproject.toml declares `readme = "README.md"`,
+# so the build backend opens it while building the project wheel. Omitting it fails the
+# second `uv sync` with "failed to open file /app/README.md".
 COPY src/ ./src/
+COPY README.md ./
 RUN uv sync --no-dev --frozen
 
 # Stage 2: Runtime

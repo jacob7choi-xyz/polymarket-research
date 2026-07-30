@@ -34,6 +34,7 @@ from .monitoring.logging import bind_context, clear_context, configure_logging, 
 from .monitoring.metrics import (
     record_opportunity_detected,
     record_trade_executed,
+    start_metrics_server,
     track_detection_cycle,
     update_capital_metrics,
     update_circuit_breaker_state,
@@ -125,7 +126,10 @@ class Application:
         # - Easy to understand, debug, test
         # - No framework lock-in
 
-        # Layer 1: Infrastructure
+        # Layer 1: Infrastructure. The metrics registry is populated by every layer below,
+        # but nothing served it until now, so Prometheus scrapes reported the target DOWN.
+        start_metrics_server(self.settings.metrics_port)
+
         self.position_tracker = PositionTracker()
         self.paper_trader = PaperTrader(
             initial_capital=self.settings.initial_capital_usd,

@@ -1,0 +1,19 @@
+# Grafana dashboard provider.
+#
+# `path` is the container path, not the host path. docker-compose mounts
+# ./monitoring/grafana/dashboards there read-only, so the JSON files sitting beside this
+# file are what Grafana loads.
+apiVersion: 1
+
+providers:
+  - name: polymarket
+    orgId: 1
+    folder: Polymarket
+    type: file
+    disableDeletion: false
+    # Provisioned dashboards are read-only in the UI; edit the JSON in the repo instead
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

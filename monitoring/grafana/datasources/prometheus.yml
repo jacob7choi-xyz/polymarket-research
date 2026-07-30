@@ -1,0 +1,19 @@
+# Grafana datasource provisioning.
+#
+# The URL uses the compose service name and the container-internal port. Prometheus is
+# published on host 9091 but listens on 9090 inside the network, so 9091 here would fail.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    # Fixed uid so dashboard JSON can reference this datasource without Grafana
+    # generating a random one at provision time
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Matches scrape_interval in monitoring/prometheus.yml
+      timeInterval: 15s

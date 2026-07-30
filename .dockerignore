@@ -34,6 +34,10 @@ htmlcov/
 
 # Documentation
 *.md
+# ...except README.md, which pyproject.toml declares as `readme`. The build backend opens
+# it while building the project wheel, so excluding it fails `uv sync` with
+# "failed to open file /app/README.md". Not documentation from the build's point of view.
+!README.md
 docs/
 
 # Logs
